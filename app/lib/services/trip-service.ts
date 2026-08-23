@@ -104,14 +104,39 @@ export async function saveTrip(ctx: TenantContext, input: TripInput): Promise<Sa
   }
 }
 
-/** List the current tenant's trips (for the home page's existing-trips view). */
-export async function listTrips(ctx: TenantContext) {
-  const res = await db.execute({
-    sql: `SELECT trip_id, trip_name, start_date, end_date, status_code, trip_budget, budget_currency
-            FROM trips
-           WHERE tenant_id = ? AND user_id = ?
-           ORDER BY start_date DESC`,
+/** List the current tenant's trips with their destinations, for the cards view. */
+export async function listTripsWithDetails(ctx: TenantContext) {
+  const tripsRes = await db.execute({
+    sql: `SELECT t.trip_id, t.trip_name, t.trip_description, t.start_date, t.end_date,
+                 t.status_code, s.status_name, t.trip_budget, t.budget_currency
+            FROM trips t
+            LEFT JOIN trip_status s ON s.status_code = t.status_code
+           WHERE t.tenant_id = ? AND t.user_id = ?
+           ORDER BY t.start_date DESC`,
     args: [ctx.tenantId, ctx.userId],
   });
-  return res.rows;
+  const trips = tripsRes.rows as unknown as Array<{
+    trip_id: number; trip_name: string; trip_description: string | null;
+    start_date: string; end_date: string; status_code: number; status_name: string | null;
+    trip_budget: number | null; budget_currency: string | null;
+  }>;
+
+  if (trips.length === 0) return [];
+
+  // Fetch all destinations for these trips in one query.
+  const ids = trips.map((t) => t.trip_id);
+  const placeholders = ids.map(() => '?').join(',');
+  const destRes = await db.execute({
+    sql: `SELECT trip_id, country, city, display_order
+            FROM trip_destinations
+           WHERE tenant_id = ? AND trip_id IN (${placeholders})
+           ORDER BY display_order`,
+    args: [ctx.tenantId, ...ids],
+  });
+  const dests = destRes.rows as unknown as Array<{ trip_id: number; country: string; city: string | null; display_order: number }>;
+
+  return trips.map((t) => ({
+    ...t,
+    destinations: dests.filter((d) => d.trip_id === t.trip_id),
+  }));
 }
