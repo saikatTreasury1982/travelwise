@@ -1,6 +1,6 @@
 // app/components/copilot/CopilotHome.tsx
 'use client';
-import WorldMap, { type MapPoint } from './WorldMap';
+import DottedGlobe from './DottedGlobe';
 import { lookupCoords } from '@/app/lib/geo';
 import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
@@ -16,7 +16,6 @@ export default function CopilotHome({ firstName }: { firstName: string }) {
   const [loading, setLoading] = useState(false);
   const [saved, setSaved] = useState<SavedTrip | null>(null);
   const [started, setStarted] = useState(false);
-  const [mapPoints, setMapPoints] = useState<MapPoint[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -38,14 +37,6 @@ export default function CopilotHome({ firstName }: { firstName: string }) {
       const data = await res.json();
       if (data.type === 'saved') {
         setSaved(data.trip);
-        const dests = (data.tripInput?.destinations ?? []) as Array<{ city?: string; country?: string }>;
-        const pts: MapPoint[] = dests
-          .map((d) => {
-            const c = lookupCoords(d.city) ?? lookupCoords(d.country);
-            return c ? { label: d.city || d.country || '', ...c } : null;
-          })
-          .filter((p): p is MapPoint => p !== null);
-        setMapPoints(pts);
         setMessages((m) => [...m, { role: 'assistant', content: `Your trip "${data.trip.name}" is saved. 🎒` }]);
       } else {
         setMessages((m) => [...m, { role: 'assistant', content: data.message ?? '…' }]);
@@ -119,7 +110,7 @@ export default function CopilotHome({ firstName }: { firstName: string }) {
             </div>
           </div>
           <aside className="hidden md:block md:w-[42%]">
-            <WorldMap points={mapPoints} />
+            <DottedGlobe />
           </aside>
         </div>
       </div>

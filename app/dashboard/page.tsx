@@ -1,5 +1,4 @@
 // app/dashboard/page.tsx
-// Post-login home. Route-protected: redirects to /login if not authenticated.
 import { redirect } from 'next/navigation';
 import { getUserContext } from '@/app/lib/auth/context';
 import { rawQuery } from '@/app/lib/db/client';
