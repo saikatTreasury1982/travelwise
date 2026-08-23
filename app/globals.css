@@ -173,6 +173,7 @@ body {
 @keyframes slideUp { from { transform: translateY(10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 @keyframes slideDown { from { transform: translateY(-10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 @keyframes scaleIn { from { transform: scale(0.97); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+@keyframes spin { to { transform: rotate(360deg); } }
 
 .animate-fade-in { animation: fadeIn 250ms ease-in-out; }
 .animate-slide-up { animation: slideUp 250ms ease-out; }
