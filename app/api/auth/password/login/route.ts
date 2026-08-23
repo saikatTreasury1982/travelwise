@@ -7,7 +7,7 @@
 import { NextResponse } from 'next/server';
 import { rawQuery } from '@/app/lib/db/client';
 import { verifyPassword } from '@/app/lib/services/password-service';
-import { createSession } from '@/app/lib/services/session-service';
+import { createSession, cleanupExpiredSessionsForUser } from '@/app/lib/services/session-service';
 import { writeAudit } from '@/app/lib/audit';
 import { SESSION_COOKIE } from '@/app/lib/auth/context';
 
@@ -52,15 +52,17 @@ export async function POST(request: Request) {
   const issued = await createSession({
     tenantId: tenant_id, userId: user_id, authMethod: 'password', ip, userAgent: ua,
   });
+  // Tidy this user's expired sessions (ADR-001 Amendment A).
+  await cleanupExpiredSessionsForUser(user_id);
   await writeAudit({ event: 'login.success', result: 'success', tenantId: tenant_id, userId: user_id, detail: { method: 'password' }, ip, userAgent: ua });
 
   const res = NextResponse.json({ ok: true });
   const secure = process.env.NODE_ENV === 'production';
   res.cookies.set(SESSION_COOKIE, issued.sessionToken, {
-    httpOnly: true, secure, sameSite: 'lax', path: '/', maxAge: 60 * 60 * 24 * 30,
+    httpOnly: true, secure, sameSite: 'lax', path: '/',
   });
   res.cookies.set(REFRESH_COOKIE, issued.refreshToken, {
-    httpOnly: true, secure, sameSite: 'lax', path: '/api/auth', maxAge: 60 * 60 * 24 * 30,
+    httpOnly: true, secure, sameSite: 'lax', path: '/api/auth',
   });
   return res;
 }

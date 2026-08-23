@@ -66,8 +66,12 @@ export async function POST(request: NextRequest) {
 
   const res = NextResponse.json({ ok: true });
   const secure = process.env.NODE_ENV === 'production';
-  res.cookies.set(SESSION_COOKIE, issued.sessionToken, { httpOnly: true, secure, sameSite: 'lax', path: '/', maxAge: 60 * 60 * 24 * 30 });
-  res.cookies.set(REFRESH_COOKIE, issued.refreshToken, { httpOnly: true, secure, sameSite: 'lax', path: '/api/auth', maxAge: 60 * 60 * 24 * 30 });
+  res.cookies.set(SESSION_COOKIE, issued.sessionToken, {
+    httpOnly: true, secure, sameSite: 'lax', path: '/',
+  });
+  res.cookies.set(REFRESH_COOKIE, issued.refreshToken, {
+    httpOnly: true, secure, sameSite: 'lax', path: '/api/auth',
+  });
   res.cookies.set(CHALLENGE_COOKIE, '', { httpOnly: true, path: '/api/auth/passkey', maxAge: 0 });
   return res;
 }

@@ -21,7 +21,7 @@
 // keyed by unguessable tokens.
 // -----------------------------------------------------------------------------
 import { randomBytes, createHash } from 'crypto';
-import { rawQuery, rawExecute } from '../db/client';
+import { db, rawQuery, rawExecute } from '../db/client';
 
 // --- lifetimes (tune here; these are the only knobs) ------------------------
 const ACCESS_TTL_MIN = 15;          // access pass lifetime
@@ -257,4 +257,62 @@ export async function revokeSession(
       WHERE session_id = ? AND status = 'ACTIVE'`,
     [sessionId],
   );
+}
+
+// -----------------------------------------------------------------------------
+// Cleanup — orphaned/expired sessions (ADR-001 Amendment A).
+// -----------------------------------------------------------------------------
+
+/**
+ * On login: close THIS user's OWN expired OPEN sessions (past expires_at).
+ * Only expired ones — never all OPEN sessions — so a live session on another
+ * device (laptop + phone) is not killed.
+ */
+export async function cleanupExpiredSessionsForUser(userId: string): Promise<void> {
+  await rawExecute(
+    `UPDATE auth_sessions
+        SET session_status = 'CLOSED', closed_at = datetime('now')
+      WHERE user_id = ?
+        AND session_status = 'OPEN'
+        AND expires_at <= datetime('now')`,
+    [userId],
+  );
+  await rawExecute(
+    `UPDATE refresh_tokens
+        SET status = 'REVOKED'
+      WHERE user_id = ?
+        AND status = 'ACTIVE'
+        AND expires_at <= datetime('now')`,
+    [userId],
+  );
+}
+
+/**
+ * Periodic sweep (scheduled job): across ALL users, close expired OPEN sessions,
+ * then purge CLOSED sessions older than the retention window (30 days).
+ * Refresh tokens purge via ON DELETE CASCADE when the session row is deleted.
+ * Returns counts for logging.
+ */
+export async function sweepSessions(retentionDays = 30): Promise<{ closed: number; purged: number }> {
+  // 1. Close expired OPEN sessions (all users).
+  const closeRes = await db.execute({
+    sql: `UPDATE auth_sessions
+             SET session_status = 'CLOSED', closed_at = datetime('now')
+           WHERE session_status = 'OPEN' AND expires_at <= datetime('now')`,
+    args: [],
+  });
+
+  // 2. Purge CLOSED sessions older than the retention window.
+  const purgeRes = await db.execute({
+    sql: `DELETE FROM auth_sessions
+           WHERE session_status IN ('CLOSED', 'REVOKED')
+             AND closed_at IS NOT NULL
+             AND closed_at <= datetime('now', ?)`,
+    args: [`-${retentionDays} days`],
+  });
+
+  return {
+    closed: Number(closeRes.rowsAffected ?? 0),
+    purged: Number(purgeRes.rowsAffected ?? 0),
+  };
 }
