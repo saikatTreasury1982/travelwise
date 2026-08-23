@@ -1,0 +1,180 @@
+/* app/globals.css */
+@import "tailwindcss";
+
+/* ============================================================
+   THEME TOKEN CONTRACT
+   Every theme fills the SAME semantic variables + a surface style.
+   Switch via data-theme on <html>. Components read var(--tw-*) only.
+   ============================================================ */
+
+/* ---------- Direction D (default — flat, warm/serif) ---------- */
+:root,
+:root[data-theme="direction-d"] {
+  --surface-style: flat;
+
+  --canvas: #FCFBF9;
+  --surface: #FFFFFF;
+  --ink: #16110B;
+  --ink-soft: #6E675E;
+  --ink-faint: #77706A;
+  --border: #DDD7CE;
+  --divider: #E6E1D8;
+  --primary: #16110B;
+  --primary-ink: #FCFBF9;
+  --accent: #E8A33D;
+  --accent-ink: #16120A;
+  --accent-deep: #A8721F;
+  --panel: #0A1018;         /* the dark side panel */
+  --panel-ink: #F5F2ED;
+  --danger: #B4432B;
+  --danger-bg: #FBEDE9;
+  --success: #2E7D5B;
+
+  --font-display: "Instrument Serif", Georgia, serif;
+  --font-body: "Manrope", system-ui, sans-serif;
+
+  /* glass vars unused in flat themes, but defined so components never read empty */
+  --glass-bg: var(--surface);
+  --glass-border: var(--border);
+  --glass-shadow: rgba(16, 14, 12, 0.10);
+}
+
+/* ---------- Midnight Ocean (glass) ---------- */
+:root[data-theme="midnight-ocean"] {
+  --surface-style: glass;
+
+  --canvas: transparent; /* body paints the gradient below */
+  --page-gradient: linear-gradient(135deg, #0B1B2B 0%, #0D2436 25%, #103449 50%, #12545B 100%);
+  --surface: rgba(255, 255, 255, 0.09);
+  --ink: #EAF6F3;
+  --ink-soft: #B4D5CD;
+  --ink-faint: #7B9E98;
+  --border: rgba(180, 240, 225, 0.20);
+  --divider: rgba(180, 240, 225, 0.16);
+  --primary: #1D9E75;
+  --primary-ink: #EAF6F3;
+  --accent: #3FC49C;
+  --accent-ink: #06382D;
+  --accent-deep: #148561;
+  --panel: rgba(255, 255, 255, 0.06);
+  --panel-ink: #EAF6F3;
+  --danger: #F6A99A;
+  --danger-bg: rgba(180, 67, 43, 0.18);
+  --success: #6FD4B4;
+
+  --font-display: "Manrope", system-ui, sans-serif;
+  --font-body: "Manrope", system-ui, sans-serif;
+
+  --glass-bg: rgba(255, 255, 255, 0.09);
+  --glass-border: rgba(180, 240, 225, 0.20);
+  --glass-shadow: rgba(0, 0, 0, 0.34);
+}
+
+/* ---------- Forest Expedition (glass) ---------- */
+:root[data-theme="forest-expedition"] {
+  --surface-style: glass;
+
+  --canvas: transparent;
+  --page-gradient: linear-gradient(135deg, #12211C 0%, #16291F 25%, #1D3A28 50%, #2E5136 100%);
+  --surface: rgba(250, 255, 248, 0.09);
+  --ink: #EEF5EA;
+  --ink-soft: #C3D6BC;
+  --ink-faint: #8AA187;
+  --border: rgba(215, 240, 205, 0.19);
+  --divider: rgba(215, 240, 205, 0.15);
+  --primary: #B07C18;
+  --primary-ink: #FBF3E0;
+  --accent: #E5B554;
+  --accent-ink: #332105;
+  --accent-deep: #8F6212;
+  --panel: rgba(250, 255, 248, 0.06);
+  --panel-ink: #EEF5EA;
+  --danger: #F0B49A;
+  --danger-bg: rgba(150, 60, 30, 0.18);
+  --success: #A7D8A0;
+
+  --font-display: "Manrope", system-ui, sans-serif;
+  --font-body: "Manrope", system-ui, sans-serif;
+
+  --glass-bg: rgba(250, 255, 248, 0.09);
+  --glass-border: rgba(215, 240, 205, 0.19);
+  --glass-shadow: rgba(0, 0, 0, 0.35);
+}
+
+/* ============================================================
+   TAILWIND MAPPING — makes utilities like bg-surface, text-ink work.
+   ============================================================ */
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-ink-faint: var(--ink-faint);
+  --color-border: var(--border);
+  --color-divider: var(--divider);
+  --color-primary: var(--primary);
+  --color-primary-ink: var(--primary-ink);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-deep: var(--accent-deep);
+  --color-panel: var(--panel);
+  --color-panel-ink: var(--panel-ink);
+  --color-danger: var(--danger);
+  --color-danger-bg: var(--danger-bg);
+  --color-success: var(--success);
+
+  --font-display: var(--font-display);
+  --font-body: var(--font-body);
+
+  --radius-md: 11px;
+  --radius-lg: 16px;
+  --radius-xl: 22px;
+}
+
+/* ============================================================
+   BASE + SURFACE STYLES
+   ============================================================ */
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--page-gradient, var(--canvas));
+  background-attachment: fixed;
+  color: var(--ink);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  min-height: 100vh;
+  margin: 0;
+}
+
+/*
+  .surface — the themable card/panel surface. In flat themes it's a solid card;
+  in glass themes it frosts. Components use this class instead of hardcoding.
+*/
+.surface {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+:root[style*="glass"] .surface,
+:root[data-theme="midnight-ocean"] .surface,
+:root[data-theme="forest-expedition"] .surface {
+  background: var(--glass-bg);
+  border-color: var(--glass-border);
+  backdrop-filter: blur(25px) saturate(160%);
+  -webkit-backdrop-filter: blur(25px) saturate(160%);
+  box-shadow: 0 12px 32px var(--glass-shadow), inset 0 1px 0 0 rgba(255,255,255,0.10);
+}
+
+/* ============================================================
+   ANIMATIONS (kept from WanderWise)
+   ============================================================ */
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes slideUp { from { transform: translateY(10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+@keyframes slideDown { from { transform: translateY(-10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+@keyframes scaleIn { from { transform: scale(0.97); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+.animate-fade-in { animation: fadeIn 250ms ease-in-out; }
+.animate-slide-up { animation: slideUp 250ms ease-out; }
+.animate-slide-down { animation: slideDown 250ms ease-out; }
+.animate-scale-in { animation: scaleIn 220ms cubic-bezier(0.34, 1.56, 0.64, 1); }
