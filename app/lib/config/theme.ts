@@ -4,8 +4,8 @@
 
 export const THEMES = [
   {
-    key: 'direction-d',
-    label: 'Travelwise',
+    key: 'daybreak',
+    label: 'Daybreak',
     description: 'Warm, clean, split-panel',
     swatch: ['#FCFBF9', '#16110B', '#E8A33D'],
   },
@@ -25,7 +25,7 @@ export const THEMES = [
 
 export type ThemeKey = (typeof THEMES)[number]['key'];
 
-export const DEFAULT_THEME: ThemeKey = 'direction-d';
+export const DEFAULT_THEME: ThemeKey = 'daybreak';
 
 export const THEME_KEYS = THEMES.map((t) => t.key) as readonly ThemeKey[];
 

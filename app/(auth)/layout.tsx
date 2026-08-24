@@ -36,8 +36,8 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
                 <span style={{ fontSize: 12, color: 'rgba(245,242,237,0.66)' }}>6 days left</span>
               </div>
               <div className="flex items-baseline" style={{ gap: 8, marginBottom: 14 }}>
-                <span style={{ fontFamily: 'var(--font-display)', fontSize: 34, lineHeight: 1, color: 'var(--accent)' }}>€1,240</span>
-                <span style={{ fontSize: 13, color: 'rgba(245,242,237,0.70)' }}>of €2,800 remaining</span>
+                <span style={{ fontFamily: 'var(--font-display)', fontSize: 34, lineHeight: 1, color: 'var(--accent)' }}>A$3,890</span>
+                <span style={{ fontSize: 13, color: 'rgba(245,242,237,0.70)' }}>of A$8,200 remaining</span>
               </div>
               <div style={{ height: 6, borderRadius: 3, background: 'rgba(255,255,255,0.13)', overflow: 'hidden' }}>
                 <div style={{ width: '44%', height: '100%', borderRadius: 3, background: 'var(--accent)' }} />

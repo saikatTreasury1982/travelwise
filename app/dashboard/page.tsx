@@ -8,6 +8,8 @@ import CopilotHero from '@/app/components/hub/CopilotHero';
 import TripCard from '@/app/components/hub/TripCard';
 import ComingSoon from '@/app/components/hub/ComingSoon';
 
+export const dynamic = 'force-dynamic';
+
 function SectionLabel({ children, action }: { children: React.ReactNode; action?: React.ReactNode }) {
   return (
     <div className="flex items-baseline justify-between mb-3.5">

@@ -102,6 +102,14 @@ export async function POST(request: Request) {
             VALUES (?, ?, ?, 'owner')`,
       args: [accountId, userId, tenantId],
     });
+    // Default preferences row for the new user — all fields explicit.
+    await tx.execute({
+      sql: `INSERT INTO user_preferences
+              (user_id, tenant_id, theme, date_format, time_format, distance_unit,
+               copilot_tips, copilot_autonotes, email_notifications)
+            VALUES (?, ?, 'daybreak', 'DD MMM YYYY', '24h', 'km', 1, 1, 1)`,
+      args: [userId, tenantId],
+    });
     await tx.commit();
   } catch (err) {
     await tx.rollback();

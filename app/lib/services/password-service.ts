@@ -118,3 +118,25 @@ export async function userHasPassword(userId: string): Promise<boolean> {
   );
   return rows.length > 0;
 }
+
+/** Change password: verify the current one, then set the new one.
+ *  If the user has no password yet (passkey-only), currentPassword is not required. */
+export async function changePassword(params: {
+  tenantId: string; userId: string; currentPassword?: string; newPassword: string;
+}): Promise<{ ok: boolean; error?: string }> {
+  const hasPwd = await userHasPassword(params.userId);
+
+  if (hasPwd) {
+    if (!params.currentPassword) return { ok: false, error: 'Current password is required' };
+    const valid = await verifyPassword({ tenantId: params.tenantId, userId: params.userId, password: params.currentPassword });
+    if (!valid) return { ok: false, error: 'Current password is incorrect' };
+  }
+
+  // createPassword validates against policy, archives the old, inserts the new.
+  try {
+    await createPassword({ tenantId: params.tenantId, userId: params.userId, password: params.newPassword });
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : 'Could not set password' };
+  }
+}

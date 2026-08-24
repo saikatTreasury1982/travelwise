@@ -9,7 +9,7 @@
 
 /* ---------- Direction D (default — flat, warm/serif) ---------- */
 :root,
-:root[data-theme="direction-d"] {
+:root[data-theme="daybreak"] {
   --surface-style: flat;
 
   --canvas: #FCFBF9;

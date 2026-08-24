@@ -54,8 +54,18 @@ export default function TopNav({ firstName, active = 'home' }: { firstName: stri
                 <div className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>{firstName}</div>
                 <div className="text-xs" style={{ color: 'var(--ink-faint)' }}>Signed in</div>
               </div>
+              <Link href="/profile" className="block px-4 py-2.5 text-sm" style={{ color: 'var(--ink)' }} onClick={() => setMenuOpen(false)}>Profile</Link>
+              <Link href="/account" className="block px-4 py-2.5 text-sm" style={{ color: 'var(--ink)' }} onClick={() => setMenuOpen(false)}>Account</Link>
               <Link href="/settings" className="block px-4 py-2.5 text-sm" style={{ color: 'var(--ink)' }} onClick={() => setMenuOpen(false)}>Settings</Link>
-              <button onClick={handleLogout} className="w-full text-left px-4 py-2.5 text-sm" style={{ color: 'var(--danger)' }}>Sign out</button>
+              <div className="h-px my-1" style={{ background: 'var(--divider)' }} />
+              <button
+                type="button"
+                onMouseDown={(e) => { e.preventDefault(); handleLogout(); }}
+                className="w-full text-left px-4 py-2.5 text-sm"
+                style={{ color: 'var(--danger)' }}
+              >
+                Sign out
+              </button>
             </div>
           )}
         </div>
