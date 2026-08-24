@@ -140,3 +140,90 @@ export async function listTripsWithDetails(ctx: TenantContext) {
     destinations: dests.filter((d) => d.trip_id === t.trip_id),
   }));
 }
+
+/** Fetch one trip with all its details, tenant-scoped. Returns null if not found/not owned. */
+export async function getTripDetail(ctx: TenantContext, tripId: number) {
+  const tripRes = await db.execute({
+    sql: `SELECT t.trip_id, t.trip_name, t.trip_description, t.start_date, t.end_date,
+                 t.status_code, s.status_name, t.trip_budget, t.budget_currency, t.created_at
+            FROM trips t
+            LEFT JOIN trip_status s ON s.status_code = t.status_code
+           WHERE t.trip_id = ? AND t.tenant_id = ? AND t.user_id = ?
+           LIMIT 1`,
+    args: [tripId, ctx.tenantId, ctx.userId],
+  });
+  if (tripRes.rows.length === 0) return null;
+  const trip = tripRes.rows[0] as unknown as {
+    trip_id: number; trip_name: string; trip_description: string | null;
+    start_date: string; end_date: string; status_code: number; status_name: string | null;
+    trip_budget: number | null; budget_currency: string | null; created_at: string;
+  };
+
+  const destRes = await db.execute({
+    sql: `SELECT destination_id, country, city, country_code, display_order
+            FROM trip_destinations WHERE trip_id = ? AND tenant_id = ? ORDER BY display_order`,
+    args: [tripId, ctx.tenantId],
+  });
+  const travRes = await db.execute({
+    sql: `SELECT tv.traveler_id, tv.traveler_name, tv.traveler_email, tv.relationship,
+                 r.relationship_name, tv.is_primary, tv.is_cost_sharer
+            FROM trip_travelers tv
+            LEFT JOIN traveler_relationships r ON r.relationship_code = tv.relationship
+           WHERE tv.trip_id = ? AND tv.tenant_id = ? AND tv.is_active = 1`,
+    args: [tripId, ctx.tenantId],
+  });
+
+  return {
+    ...trip,
+    destinations: destRes.rows as unknown as Array<{ destination_id: number; country: string; city: string | null; country_code: string | null; display_order: number }>,
+    travelers: travRes.rows as unknown as Array<{ traveler_id: number; traveler_name: string; traveler_email: string | null; relationship: number | null; relationship_name: string | null; is_primary: number; is_cost_sharer: number }>,
+  };
+}
+
+export interface TripUpdateInput {
+  name?: string;
+  description?: string | null;
+  startDate?: string;
+  endDate?: string;
+  budget?: number | null;
+  budgetCurrency?: string | null;
+  statusCode?: number;
+}
+
+/** Update core trip fields, tenant-scoped. Only updates provided fields.
+ *  Returns false if the trip isn't found/owned by this tenant+user. */
+export async function updateTrip(ctx: TenantContext, tripId: number, input: TripUpdateInput): Promise<boolean> {
+  // Confirm ownership first (tenant + user).
+  const owned = await db.execute({
+    sql: `SELECT trip_id, start_date, end_date FROM trips WHERE trip_id = ? AND tenant_id = ? AND user_id = ? LIMIT 1`,
+    args: [tripId, ctx.tenantId, ctx.userId],
+  });
+  if (owned.rows.length === 0) return false;
+  const current = owned.rows[0] as unknown as { start_date: string; end_date: string };
+
+  // Validate date order if either date is changing.
+  const newStart = input.startDate ?? current.start_date;
+  const newEnd = input.endDate ?? current.end_date;
+  if (newEnd < newStart) throw new Error('End date cannot be before the start date.');
+
+  const sets: string[] = [];
+  const args: (string | number | null)[] = [];
+  const set = (col: string, val: string | number | null) => { sets.push(`${col} = ?`); args.push(val); };
+
+  if (input.name !== undefined) set('trip_name', input.name.trim());
+  if (input.description !== undefined) set('trip_description', input.description);
+  if (input.startDate !== undefined) set('start_date', input.startDate);
+  if (input.endDate !== undefined) set('end_date', input.endDate);
+  if (input.budget !== undefined) set('trip_budget', input.budget);
+  if (input.budgetCurrency !== undefined) set('budget_currency', input.budgetCurrency);
+  if (input.statusCode !== undefined) set('status_code', input.statusCode);
+
+  if (sets.length === 0) return true; // nothing to change
+  set('updated_at', new Date().toISOString().replace('T', ' ').slice(0, 19));
+
+  await db.execute({
+    sql: `UPDATE trips SET ${sets.join(', ')} WHERE trip_id = ? AND tenant_id = ? AND user_id = ?`,
+    args: [...args, tripId, ctx.tenantId, ctx.userId],
+  });
+  return true;
+}
