@@ -108,3 +108,12 @@ export async function userHasPasskey(userId: string): Promise<boolean> {
   );
   return rows.length > 0;
 }
+
+/** List a user's active passkeys for the management UI. */
+export async function listUserPasskeys(userId: string) {
+  return rawQuery<{ credential_id: string; device_label: string | null; created_at: string; last_used_at: string | null }>(
+    `SELECT credential_id, device_label, created_at, last_used_at
+       FROM passkeys WHERE user_id = ? AND is_active = 1 ORDER BY created_at DESC`,
+    [userId],
+  );
+}
