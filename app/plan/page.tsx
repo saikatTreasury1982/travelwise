@@ -1,4 +1,5 @@
 // app/plan/page.tsx
+import { Suspense } from 'react';
 import { redirect } from 'next/navigation';
 import { getUserContext } from '@/app/lib/auth/context';
 import { rawQuery } from '@/app/lib/db/client';
@@ -11,5 +12,9 @@ export default async function PlanPage() {
     `SELECT first_name FROM users WHERE user_id = ? LIMIT 1`, [ctx.userId],
   );
   const firstName = users[0]?.first_name ?? 'traveller';
-  return <CopilotHome firstName={firstName} />;
+  return (
+    <Suspense fallback={null}>
+      <CopilotHome firstName={firstName} />
+    </Suspense>
+  );
 }

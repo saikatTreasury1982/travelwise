@@ -16,7 +16,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const initialTheme = theme?.themeId ?? DEFAULT_THEME;
 
   return (
-    <html lang="en" data-theme={initialTheme}>
+    <html lang="en" data-theme={initialTheme} suppressHydrationWarning>
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
@@ -26,7 +26,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         />
         {themeCss ? <style dangerouslySetInnerHTML={{ __html: themeCss }} /> : null}
       </head>
-      <body>
+      <body suppressHydrationWarning>
         <ThemeProvider initialTheme={initialTheme}>{children}</ThemeProvider>
       </body>
     </html>

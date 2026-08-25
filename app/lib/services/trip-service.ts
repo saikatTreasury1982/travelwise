@@ -3,7 +3,9 @@
 // gathered enough info (name + start + end dates minimum). Writes trips +
 // destinations + travelers in one transaction, all stamped with tenant_id.
 import { db } from '../db/client';
-import type { TenantContext } from '../db/scoped';
+import { scopedQuery, scopedExecute } from '@/app/lib/db/scoped';
+import type { TenantContext } from '@/app/lib/db/scoped';
+import { ensurePrimaryTraveler } from '@/app/lib/services/traveler-service';
 
 // The structured trip the AI produces (and the form could produce too).
 export interface TripDestinationInput {
@@ -97,6 +99,8 @@ export async function saveTrip(ctx: TenantContext, input: TripInput): Promise<Sa
     }
 
     await tx.commit();
+    // Every trip always has its primary traveller (the logged-in user).
+    await ensurePrimaryTraveler(ctx, tripId);
     return { tripId, name: input.name.trim() };
   } catch (err) {
     await tx.rollback();
@@ -106,77 +110,128 @@ export async function saveTrip(ctx: TenantContext, input: TripInput): Promise<Sa
 
 /** List the current tenant's trips with their destinations, for the cards view. */
 export async function listTripsWithDetails(ctx: TenantContext) {
-  const tripsRes = await db.execute({
-    sql: `SELECT t.trip_id, t.trip_name, t.trip_description, t.start_date, t.end_date,
-                 t.status_code, s.status_name, t.trip_budget, t.budget_currency
-            FROM trips t
-            LEFT JOIN trip_status s ON s.status_code = t.status_code
-           WHERE t.tenant_id = ? AND t.user_id = ?
-           ORDER BY t.start_date DESC`,
-    args: [ctx.tenantId, ctx.userId],
-  });
-  const trips = tripsRes.rows as unknown as Array<{
-    trip_id: number; trip_name: string; trip_description: string | null;
-    start_date: string; end_date: string; status_code: number; status_name: string | null;
-    trip_budget: number | null; budget_currency: string | null;
-  }>;
+  const tripRows = await scopedQuery(
+    ctx,
+    `SELECT trip_id, trip_name, trip_description, start_date, end_date,
+            status_code, trip_budget, budget_currency, created_at
+     FROM trips WHERE {{tenant}} ORDER BY start_date DESC, created_at DESC`,
+    []
+  );
 
-  if (trips.length === 0) return [];
-
-  // Fetch all destinations for these trips in one query.
-  const ids = trips.map((t) => t.trip_id);
-  const placeholders = ids.map(() => '?').join(',');
-  const destRes = await db.execute({
-    sql: `SELECT trip_id, country, city, display_order
-            FROM trip_destinations
-           WHERE tenant_id = ? AND trip_id IN (${placeholders})
-           ORDER BY display_order`,
-    args: [ctx.tenantId, ...ids],
-  });
-  const dests = destRes.rows as unknown as Array<{ trip_id: number; country: string; city: string | null; display_order: number }>;
-
-  return trips.map((t) => ({
-    ...t,
-    destinations: dests.filter((d) => d.trip_id === t.trip_id),
-  }));
+  const trips = [];
+  for (const t of tripRows) {
+    const destRows = await scopedQuery(
+      ctx,
+      `SELECT destination_id, country, country_code, city, display_order
+       FROM trip_destinations WHERE {{tenant}} AND trip_id = ? ORDER BY display_order`,
+      [Number(t.trip_id)]
+    );
+    const travCount = await scopedQuery(
+      ctx,
+      `SELECT COUNT(*) AS n FROM trip_travelers
+       WHERE {{tenant}} AND trip_id = ? AND is_active = 1`,
+      [Number(t.trip_id)]
+    );
+    trips.push({
+      trip_id: Number(t.trip_id),
+      trip_name: String(t.trip_name),
+      trip_description: t.trip_description == null ? null : String(t.trip_description),
+      start_date: String(t.start_date),
+      end_date: String(t.end_date),
+      status_code: t.status_code == null ? null : Number(t.status_code),
+      trip_budget: t.trip_budget == null ? null : Number(t.trip_budget),
+      budget_currency: t.budget_currency == null ? null : String(t.budget_currency),
+      created_at: t.created_at == null ? null : String(t.created_at),
+      traveler_count: Number(travCount[0]?.n ?? 0),
+      destinations: destRows.map((d) => ({
+        destination_id: Number(d.destination_id),
+        country: String(d.country),
+        country_code: d.country_code == null ? null : String(d.country_code),
+        city: d.city == null ? null : String(d.city),
+        display_order: Number(d.display_order),
+      })),
+    });
+  }
+  return trips;
 }
 
 /** Fetch one trip with all its details, tenant-scoped. Returns null if not found/not owned. */
 export async function getTripDetail(ctx: TenantContext, tripId: number) {
-  const tripRes = await db.execute({
-    sql: `SELECT t.trip_id, t.trip_name, t.trip_description, t.start_date, t.end_date,
-                 t.status_code, s.status_name, t.trip_budget, t.budget_currency, t.created_at
-            FROM trips t
-            LEFT JOIN trip_status s ON s.status_code = t.status_code
-           WHERE t.trip_id = ? AND t.tenant_id = ? AND t.user_id = ?
-           LIMIT 1`,
-    args: [tripId, ctx.tenantId, ctx.userId],
-  });
-  if (tripRes.rows.length === 0) return null;
-  const trip = tripRes.rows[0] as unknown as {
-    trip_id: number; trip_name: string; trip_description: string | null;
-    start_date: string; end_date: string; status_code: number; status_name: string | null;
-    trip_budget: number | null; budget_currency: string | null; created_at: string;
-  };
+  const tripRows = await scopedQuery(
+    ctx,
+    `SELECT trip_id, trip_name, trip_description, start_date, end_date,
+            status_code, trip_budget, budget_currency, created_at, updated_at
+     FROM trips WHERE {{tenant}} AND trip_id = ?`,
+    [tripId]
+  );
+  const t = tripRows[0];
+  if (!t) return null;
 
-  const destRes = await db.execute({
-    sql: `SELECT destination_id, country, city, country_code, display_order
-            FROM trip_destinations WHERE trip_id = ? AND tenant_id = ? ORDER BY display_order`,
-    args: [tripId, ctx.tenantId],
-  });
-  const travRes = await db.execute({
-    sql: `SELECT tv.traveler_id, tv.traveler_name, tv.traveler_email, tv.relationship,
-                 r.relationship_name, tv.is_primary, tv.is_cost_sharer
-            FROM trip_travelers tv
-            LEFT JOIN traveler_relationships r ON r.relationship_code = tv.relationship
-           WHERE tv.trip_id = ? AND tv.tenant_id = ? AND tv.is_active = 1`,
-    args: [tripId, ctx.tenantId],
-  });
+  const destRows = await scopedQuery(
+    ctx,
+    `SELECT destination_id, country, country_code, city, display_order,
+            latitude, longitude
+     FROM trip_destinations WHERE {{tenant}} AND trip_id = ? ORDER BY display_order`,
+    [tripId]
+  );
+
+  const travRows = await scopedQuery(
+    ctx,
+    `SELECT tt.traveler_id, tt.traveler_name, tt.traveler_email, tt.relationship,
+            tr.relationship_name, tt.is_primary, tt.is_cost_sharer,
+            tt.traveler_currency, tt.is_active
+     FROM trip_travelers tt
+     LEFT JOIN traveler_relationships tr ON tr.relationship_code = tt.relationship
+     WHERE {{tenant:tt}} AND tt.trip_id = ?
+     ORDER BY tt.is_primary DESC, tt.is_active DESC, tt.traveler_id ASC`,
+    [tripId]
+  );
+
+  const noteRows = await scopedQuery(
+    ctx,
+    `SELECT note_id, type_name, content, created_at, updated_at
+     FROM trip_notes WHERE {{tenant}} AND trip_id = ?`,
+    [tripId]
+  );
 
   return {
-    ...trip,
-    destinations: destRes.rows as unknown as Array<{ destination_id: number; country: string; city: string | null; country_code: string | null; display_order: number }>,
-    travelers: travRes.rows as unknown as Array<{ traveler_id: number; traveler_name: string; traveler_email: string | null; relationship: number | null; relationship_name: string | null; is_primary: number; is_cost_sharer: number }>,
+    trip_id: Number(t.trip_id),
+    trip_name: String(t.trip_name),
+    trip_description: t.trip_description == null ? null : String(t.trip_description),
+    start_date: String(t.start_date),
+    end_date: String(t.end_date),
+    status_code: t.status_code == null ? null : Number(t.status_code),
+    trip_budget: t.trip_budget == null ? null : Number(t.trip_budget),
+    budget_currency: t.budget_currency == null ? null : String(t.budget_currency),
+    created_at: t.created_at == null ? null : String(t.created_at),
+    updated_at: t.updated_at == null ? null : String(t.updated_at),
+    destinations: destRows.map((d) => ({
+      destination_id: Number(d.destination_id),
+      country: String(d.country),
+      country_code: d.country_code == null ? null : String(d.country_code),
+      city: d.city == null ? null : String(d.city),
+      display_order: Number(d.display_order),
+      latitude: d.latitude == null ? null : Number(d.latitude),
+      longitude: d.longitude == null ? null : Number(d.longitude),
+    })),
+    travelers: travRows.map((tr) => ({
+      traveler_id: Number(tr.traveler_id),
+      traveler_name: String(tr.traveler_name),
+      traveler_email: tr.traveler_email == null ? null : String(tr.traveler_email),
+      relationship: tr.relationship == null ? null : Number(tr.relationship),
+      relationship_name: tr.relationship_name == null ? null : String(tr.relationship_name),
+      is_primary: Number(tr.is_primary),
+      is_cost_sharer: Number(tr.is_cost_sharer),
+      traveler_currency: tr.traveler_currency == null ? null : String(tr.traveler_currency),
+      is_active: Number(tr.is_active),
+    })),
+    notes: noteRows.map((n) => ({
+      note_id: Number(n.note_id),
+      type_name: String(n.type_name),
+      content: String(n.content),
+      created_at: n.created_at == null ? null : String(n.created_at),
+      updated_at: n.updated_at == null ? null : String(n.updated_at),
+    })),
   };
 }
 
@@ -226,4 +281,53 @@ export async function updateTrip(ctx: TenantContext, tripId: number, input: Trip
     args: [...args, tripId, ctx.tenantId, ctx.userId],
   });
   return true;
+}
+
+export async function addDestination(
+  ctx: TenantContext, tripId: number,
+  d: { country: string; city?: string | null; countryCode?: string | null }
+): Promise<void> {
+  // Next display_order = current max + 1.
+  const rows = await scopedQuery(
+    ctx,
+    `SELECT COALESCE(MAX(display_order), -1) AS mx FROM trip_destinations WHERE {{tenant}} AND trip_id = ?`,
+    [tripId]
+  );
+  const nextOrder = Number(rows[0]?.mx ?? -1) + 1;
+  const { scopedInsert } = await import('@/app/lib/db/scoped');
+  await scopedInsert(ctx, 'trip_destinations', {
+    trip_id: tripId,
+    country: d.country,
+    city: d.city ?? null,
+    country_code: d.countryCode ?? null,
+    display_order: nextOrder,
+  });
+}
+
+export async function updateDestination(
+  ctx: TenantContext, tripId: number, destinationId: number,
+  patch: { country?: string; city?: string | null; countryCode?: string | null }
+): Promise<void> {
+  const sets: string[] = [];
+  const args: (string | number | null)[] = [];
+  if (patch.country !== undefined) { sets.push('country = ?'); args.push(patch.country); }
+  if (patch.city !== undefined) { sets.push('city = ?'); args.push(patch.city); }
+  if (patch.countryCode !== undefined) { sets.push('country_code = ?'); args.push(patch.countryCode); }
+  if (sets.length === 0) return;
+  args.push(tripId, destinationId);
+  await scopedExecute(
+    ctx,
+    `UPDATE trip_destinations SET ${sets.join(', ')} WHERE {{tenant}} AND trip_id = ? AND destination_id = ?`,
+    args as import('@libsql/client').InValue[]
+  );
+}
+
+export async function removeDestination(
+  ctx: TenantContext, tripId: number, destinationId: number
+): Promise<void> {
+  await scopedExecute(
+    ctx,
+    `DELETE FROM trip_destinations WHERE {{tenant}} AND trip_id = ? AND destination_id = ?`,
+    [tripId, destinationId]
+  );
 }

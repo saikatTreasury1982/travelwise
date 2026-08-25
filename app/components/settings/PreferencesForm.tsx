@@ -2,9 +2,9 @@
 'use client';
 import { useState } from 'react';
 import SelectPill from '@/app/components/ui/SelectPill';
+import TogglePill from '@/app/components/ui/TogglePill';
 import type { Preferences } from '@/app/lib/services/preferences-service';
 
-// A labelled row: label + description on the left, the pill on the right.
 function PrefRow({ label, description, children }: { label: string; description?: string; children: React.ReactNode }) {
   return (
     <div className="flex items-center justify-between gap-6 py-3.5" style={{ borderBottom: '1px solid var(--divider)' }}>
@@ -30,13 +30,9 @@ export default function PreferencesForm({ initial }: { initial: Preferences }) {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch),
       });
       if (!res.ok) throw new Error();
-      setSavedMsg('Saved');
-      setTimeout(() => setSavedMsg(''), 1500);
-    } catch {
-      setSavedMsg('Could not save');
-    } finally {
-      setSaving(false);
-    }
+      setSavedMsg('Saved'); setTimeout(() => setSavedMsg(''), 1500);
+    } catch { setSavedMsg('Could not save'); }
+    finally { setSaving(false); }
   }
 
   return (
@@ -46,6 +42,7 @@ export default function PreferencesForm({ initial }: { initial: Preferences }) {
         {savedMsg && <span className="text-[12px]" style={{ color: savedMsg === 'Saved' ? 'var(--success)' : 'var(--danger)' }}>{savedMsg}</span>}
       </div>
 
+      {/* Date format — 4 options → SelectPill */}
       <PrefRow label="Date format">
         <SelectPill
           value={prefs.date_format ?? 'DD MMM YYYY'} disabled={saving}
@@ -60,46 +57,38 @@ export default function PreferencesForm({ initial }: { initial: Preferences }) {
         />
       </PrefRow>
 
+      {/* Time format — 2 options → TogglePill */}
       <PrefRow label="Time format">
-        <SelectPill
-          value={prefs.time_format ?? '24h'} disabled={saving}
+        <TogglePill
+          value={prefs.time_format ?? '24h'}
           onChange={(v) => update({ time_format: v })}
-          ariaLabel="Time format"
-          options={[
-            { value: '24h', label: '24-hour (14:00)' },
-            { value: '12h', label: '12-hour (2:00 PM)' },
-          ]}
+          options={[{ value: '24h', label: '24-hour' }, { value: '12h', label: '12-hour' }]}
         />
       </PrefRow>
 
+      {/* Distance — 2 options → TogglePill */}
       <PrefRow label="Distance">
-        <SelectPill
-          value={prefs.distance_unit ?? 'km'} disabled={saving}
+        <TogglePill
+          value={prefs.distance_unit ?? 'km'}
           onChange={(v) => update({ distance_unit: v })}
-          ariaLabel="Distance unit"
-          options={[
-            { value: 'km', label: 'Kilometres (80 km)' },
-            { value: 'miles', label: 'Miles (50 mi)' },
-          ]}
+          options={[{ value: 'km', label: 'Kilometres' }, { value: 'miles', label: 'Miles' }]}
         />
       </PrefRow>
 
       <h2 className="text-xs font-bold uppercase mt-8 mb-3" style={{ color: 'var(--accent-deep)', letterSpacing: '0.4px' }}>Planning co-pilot</h2>
 
       <PrefRow label="Expert travel tips" description="Proactive travel tips from the co-pilot.">
-        <SelectPill
-          value={prefs.copilot_tips ? 'on' : 'off'} disabled={saving}
+        <TogglePill
+          value={prefs.copilot_tips ? 'on' : 'off'}
           onChange={(v) => update({ copilot_tips: (v === 'on' ? 1 : 0) as Preferences['copilot_tips'] })}
-          ariaLabel="Expert travel tips"
           options={[{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }]}
         />
       </PrefRow>
 
       <PrefRow label="Auto-fill place notes" description="Let the co-pilot populate place descriptions.">
-        <SelectPill
-          value={prefs.copilot_autonotes ? 'on' : 'off'} disabled={saving}
+        <TogglePill
+          value={prefs.copilot_autonotes ? 'on' : 'off'}
           onChange={(v) => update({ copilot_autonotes: (v === 'on' ? 1 : 0) as Preferences['copilot_autonotes'] })}
-          ariaLabel="Auto-fill place notes"
           options={[{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }]}
         />
       </PrefRow>

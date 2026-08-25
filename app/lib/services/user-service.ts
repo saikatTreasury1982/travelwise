@@ -1,68 +1,67 @@
-// app/lib/services/user-service.ts
-import { db, rawQuery } from '../db/client';
-import type { TenantContext } from '../db/scoped';
+import { scopedQuery, scopedExecute } from '@/app/lib/db/scoped';
+import type { TenantContext } from '@/app/lib/db/scoped';
 
-export interface UserProfile {
-  user_id: string; email: string; first_name: string; middle_name: string | null;
-  last_name: string; resident_country: string; home_currency: string;
+export interface Profile {
+  user_id: string;
+  email: string | null;
+  first_name: string | null;
+  middle_name: string | null;
+  last_name: string | null;
+  resident_country: string | null;
+  home_currency: string | null;
+  is_active: number;
 }
 
-export async function getProfile(ctx: TenantContext): Promise<UserProfile | null> {
-  const rows = await rawQuery<UserProfile>(
-    `SELECT user_id, email, first_name, middle_name, last_name, resident_country, home_currency
-       FROM users WHERE user_id = ? AND tenant_id = ? LIMIT 1`,
-    [ctx.userId, ctx.tenantId],
+export async function getProfile(ctx: TenantContext): Promise<Profile | null> {
+  const rows = await scopedQuery(
+    ctx,
+    `SELECT user_id, email, first_name, middle_name, last_name,
+            resident_country, home_currency, is_active
+     FROM users WHERE {{tenant}} AND user_id = ?`,
+    [ctx.userId]
   );
-  return rows[0] ?? null;
+  const r = rows[0];
+  if (!r) return null;
+  return {
+    user_id: String(r.user_id),
+    email: r.email == null ? null : String(r.email),
+    first_name: r.first_name == null ? null : String(r.first_name),
+    middle_name: r.middle_name == null ? null : String(r.middle_name),
+    last_name: r.last_name == null ? null : String(r.last_name),
+    resident_country: r.resident_country == null ? null : String(r.resident_country),
+    home_currency: r.home_currency == null ? null : String(r.home_currency),
+    is_active: Number(r.is_active),
+  };
 }
 
 export interface ProfileUpdate {
-  firstName?: string; middleName?: string | null; lastName?: string;
-  email?: string; residentCountry?: string; homeCurrency?: string;
+  first_name?: string | null;
+  middle_name?: string | null;
+  last_name?: string | null;
+  resident_country?: string | null;
+  home_currency?: string | null;
 }
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-export async function updateProfile(ctx: TenantContext, input: ProfileUpdate): Promise<void> {
+export async function updateProfile(ctx: TenantContext, patch: ProfileUpdate): Promise<Profile | null> {
+  // Email is intentionally NOT updatable here (login identity; needs verification flow).
+  const allowed: (keyof ProfileUpdate)[] = [
+    'first_name', 'middle_name', 'last_name', 'resident_country', 'home_currency',
+  ];
   const sets: string[] = [];
-  const args: (string | null)[] = [];
-  const set = (col: string, val: string | null) => { sets.push(`${col} = ?`); args.push(val); };
-
-  if (input.firstName !== undefined) {
-    if (!input.firstName.trim()) throw new Error('First name is required');
-    set('first_name', input.firstName.trim());
+  const args: unknown[] = [];
+  for (const key of allowed) {
+    if (patch[key] !== undefined) {
+      sets.push(`${key} = ?`);
+      args.push(patch[key]);
+    }
   }
-  if (input.middleName !== undefined) set('middle_name', input.middleName?.trim() || null);
-  if (input.lastName !== undefined) {
-    if (!input.lastName.trim()) throw new Error('Last name is required');
-    set('last_name', input.lastName.trim());
-  }
-  if (input.email !== undefined) {
-    const email = input.email.trim().toLowerCase();
-    if (!EMAIL_RE.test(email)) throw new Error('Please enter a valid email address');
-    // Ensure email stays unique within the tenant.
-    const clash = await rawQuery<{ user_id: string }>(
-      `SELECT user_id FROM users WHERE tenant_id = ? AND email = ? AND user_id <> ? LIMIT 1`,
-      [ctx.tenantId, email, ctx.userId],
+  if (sets.length > 0) {
+    args.push(ctx.userId);
+    await scopedExecute(
+      ctx,
+      `UPDATE users SET ${sets.join(', ')} WHERE {{tenant}} AND user_id = ?`,
+      args as import('@libsql/client').InValue[]
     );
-    if (clash.length > 0) throw new Error('That email is already in use');
-    set('email', email);
   }
-  if (input.residentCountry !== undefined) {
-    const c = await rawQuery<{ country_code: string }>(`SELECT country_code FROM countries WHERE country_code = ?`, [input.residentCountry]);
-    if (c.length === 0) throw new Error('Unknown country');
-    set('resident_country', input.residentCountry);
-  }
-  if (input.homeCurrency !== undefined) {
-    const c = await rawQuery<{ currency_code: string }>(`SELECT currency_code FROM currencies WHERE currency_code = ?`, [input.homeCurrency]);
-    if (c.length === 0) throw new Error('Unknown currency');
-    set('home_currency', input.homeCurrency);
-  }
-
-  if (sets.length === 0) return;
-  set('updated_at', new Date().toISOString().replace('T', ' ').slice(0, 19));
-  await db.execute({
-    sql: `UPDATE users SET ${sets.join(', ')} WHERE user_id = ? AND tenant_id = ?`,
-    args: [...args, ctx.userId, ctx.tenantId],
-  });
+  return getProfile(ctx);
 }

@@ -3,13 +3,17 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import TravelersSection from '@/app/components/hub/TravelersSection';
 
 interface Trip {
   trip_id: number; trip_name: string; trip_description: string | null;
   start_date: string; end_date: string; status_name: string | null;
   trip_budget: number | null; budget_currency: string | null;
   destinations: Array<{ destination_id: number; country: string; city: string | null }>;
-  travelers: Array<{ traveler_id: number; traveler_name: string; relationship_name: string | null; is_primary: number }>;
+  travelers: Array<{
+    traveler_id: number; traveler_name: string; relationship: number | null;
+    relationship_name: string | null; is_primary: number; is_cost_sharer: number; is_active: number;
+  }>;
 }
 
 function fmt(d: string) {
@@ -142,18 +146,7 @@ export default function TripDetail({ trip: initial }: { trip: Trip }) {
       </section>
 
       {/* travellers */}
-      {trip.travelers.length > 0 && (
-        <section className="mb-8">
-          <h2 className="text-xs font-bold uppercase mb-3" style={{ color: 'var(--accent-deep)', letterSpacing: '0.4px' }}>Who's going</h2>
-          <div className="flex flex-wrap gap-2">
-            {trip.travelers.map((t) => (
-              <span key={t.traveler_id} className="text-[14px] px-3.5 py-2 rounded-full" style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--ink)' }}>
-                {t.traveler_name}{t.relationship_name ? ` · ${t.relationship_name}` : ''}{t.is_primary ? ' ★' : ''}
-              </span>
-            ))}
-          </div>
-        </section>
-      )}
+      <TravelersSection tripId={trip.trip_id} travelers={trip.travelers} />
     </div>
   );
 }

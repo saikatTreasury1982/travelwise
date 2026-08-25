@@ -17,7 +17,12 @@ export type AuditEvent =
   | 'password.rotate'
   | 'session.create'
   | 'session.revoke'
-  | 'role.change';
+  | 'role.change'
+  | 'trip.create'
+  | 'trip.update'
+  | 'trip.traveler.add'
+  | 'trip.traveler.update'
+  | 'trip.traveler.remove';
 
 export interface AuditInput {
   event: AuditEvent;

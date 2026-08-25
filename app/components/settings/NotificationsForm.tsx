@@ -1,7 +1,7 @@
 // app/components/settings/NotificationsForm.tsx
 'use client';
 import { useState } from 'react';
-import SelectPill from '@/app/components/ui/SelectPill';
+import TogglePill from '@/app/components/ui/TogglePill';
 import ComingSoon from '@/app/components/hub/ComingSoon';
 import type { Preferences } from '@/app/lib/services/preferences-service';
 
@@ -43,10 +43,9 @@ export default function NotificationsForm({ initial }: { initial: Preferences })
       </div>
 
       <PrefRow label="Email notifications" description="Trip reminders and account emails.">
-        <SelectPill
-          value={prefs.email_notifications ? 'on' : 'off'} disabled={saving}
+        <TogglePill
+          value={prefs.email_notifications ? 'on' : 'off'}
           onChange={(v) => update({ email_notifications: (v === 'on' ? 1 : 0) as Preferences['email_notifications'] })}
-          ariaLabel="Email notifications"
           options={[{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }]}
         />
       </PrefRow>
