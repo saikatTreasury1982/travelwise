@@ -22,10 +22,18 @@ export default async function TripDetailPage({ params }: { params: Promise<{ id:
   const trip = await getTripDetail(ctx, tripId);
   if (!trip) notFound();
 
+  const currencies = (await rawQuery(
+    `SELECT currency_code, currency_name, currency_symbol FROM currencies ORDER BY currency_code`
+  )).map((c) => ({
+    currency_code: String(c.currency_code),
+    currency_name: String(c.currency_name),
+    currency_symbol: c.currency_symbol == null ? null : String(c.currency_symbol),
+  }));
+
   return (
     <div style={{ background: 'var(--canvas)', minHeight: '100vh' }}>
       <TopNav firstName={firstName} active="trips" />
-      <TripDetail trip={trip} />
+      <TripDetail trip={trip} currencies={currencies} />
     </div>
   );
 }

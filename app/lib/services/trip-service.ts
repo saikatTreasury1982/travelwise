@@ -285,9 +285,8 @@ export async function updateTrip(ctx: TenantContext, tripId: number, input: Trip
 
 export async function addDestination(
   ctx: TenantContext, tripId: number,
-  d: { country: string; city?: string | null; countryCode?: string | null }
+  d: { country: string; city?: string | null; countryCode?: string | null; latitude?: number | null; longitude?: number | null }
 ): Promise<void> {
-  // Next display_order = current max + 1.
   const rows = await scopedQuery(
     ctx,
     `SELECT COALESCE(MAX(display_order), -1) AS mx FROM trip_destinations WHERE {{tenant}} AND trip_id = ?`,
@@ -300,6 +299,8 @@ export async function addDestination(
     country: d.country,
     city: d.city ?? null,
     country_code: d.countryCode ?? null,
+    latitude: d.latitude ?? null,
+    longitude: d.longitude ?? null,
     display_order: nextOrder,
   });
 }

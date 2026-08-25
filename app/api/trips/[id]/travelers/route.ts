@@ -29,12 +29,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const relationship = body.relationship == null ? null : Number(body.relationship);
   if (relationship === 1) return NextResponse.json({ error: 'Cannot add another primary (Self).' }, { status: 400 });
 
-  await addCoTravelers(ctx, tripId, [{
+    await addCoTravelers(ctx, tripId, [{
     traveler_name: name,
     relationship: relationship ?? 5,
     is_cost_sharer: body.is_cost_sharer !== false,
     is_active: body.is_active !== false,
     traveler_email: typeof body.traveler_email === 'string' ? body.traveler_email : null,
+    traveler_currency: typeof body.traveler_currency === 'string' ? body.traveler_currency : null,
   }]);
 
   await writeAudit({

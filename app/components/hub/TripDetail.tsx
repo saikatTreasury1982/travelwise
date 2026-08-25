@@ -4,17 +4,21 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import TravelersSection from '@/app/components/hub/TravelersSection';
+import DestinationSearch, { type GeoPick } from '@/app/components/ui/DestinationSearch';
 
 interface Trip {
   trip_id: number; trip_name: string; trip_description: string | null;
-  start_date: string; end_date: string; status_name: string | null;
+  start_date: string; end_date: string; status_code: number | null;
   trip_budget: number | null; budget_currency: string | null;
   destinations: Array<{ destination_id: number; country: string; city: string | null }>;
   travelers: Array<{
     traveler_id: number; traveler_name: string; relationship: number | null;
     relationship_name: string | null; is_primary: number; is_cost_sharer: number; is_active: number;
+    traveler_email: string | null; traveler_currency: string | null;
   }>;
 }
+
+interface Currency { currency_code: string; currency_name: string; currency_symbol?: string | null; }
 
 function fmt(d: string) {
   try { return new Date(d).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }); }
@@ -24,7 +28,9 @@ function nights(a: string, b: string) {
   try { return Math.round((new Date(b).getTime() - new Date(a).getTime()) / 86400000); } catch { return 0; }
 }
 
-export default function TripDetail({ trip: initial }: { trip: Trip }) {
+const STATUS_LABELS: Record<number, string> = { 1: 'Draft', 2: 'Planned', 3: 'Active', 4: 'Completed' };
+
+export default function TripDetail({ trip: initial, currencies }: { trip: Trip; currencies: Currency[] }) {
   const router = useRouter();
   const [trip, setTrip] = useState(initial);
   const [editing, setEditing] = useState<string | null>(null);
@@ -36,6 +42,37 @@ export default function TripDetail({ trip: initial }: { trip: Trip }) {
   const [start, setStart] = useState(trip.start_date);
   const [end, setEnd] = useState(trip.end_date);
   const [budget, setBudget] = useState(trip.trip_budget?.toString() ?? '');
+
+  const [addingDest, setAddingDest] = useState(false);
+  const [destBusy, setDestBusy] = useState(false);
+
+  async function addDestination(pick: GeoPick) {
+    setDestBusy(true); setError('');
+    try {
+      const res = await fetch(`/api/trips/${trip.trip_id}/destinations`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ country: pick.country, city: pick.city, latitude: pick.latitude, longitude: pick.longitude }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Could not add destination.');
+      const d = await res.json();
+      setTrip((t) => ({ ...t, destinations: d.destinations }));
+      setAddingDest(false);
+      router.refresh();
+    } catch (err) { setError(err instanceof Error ? err.message : 'Could not add destination.'); }
+    finally { setDestBusy(false); }
+  }
+
+  async function removeDestination(destId: number) {
+    setDestBusy(true); setError('');
+    try {
+      const res = await fetch(`/api/trips/${trip.trip_id}/destinations/${destId}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Could not remove.');
+      const d = await res.json();
+      setTrip((t) => ({ ...t, destinations: d.destinations }));
+      router.refresh();
+    } catch (err) { setError(err instanceof Error ? err.message : 'Could not remove.'); }
+    finally { setDestBusy(false); }
+  }
 
   async function save(fields: Record<string, unknown>, optimistic: Partial<Trip>) {
     setSaving(true); setError('');
@@ -78,7 +115,7 @@ export default function TripDetail({ trip: initial }: { trip: Trip }) {
         ) : (
           <h1 onClick={() => setEditing('name')} style={{ fontFamily: 'var(--font-display)', fontSize: 'clamp(30px,4vw,42px)', lineHeight: 1.05, color: 'var(--ink)', ...editHint }} title="Click to edit">{trip.trip_name}</h1>
         )}
-        <span className="text-[12px] font-semibold px-3 py-1 rounded-full flex-shrink-0 mt-2" style={{ background: 'color-mix(in srgb, var(--ink) 6%, transparent)', color: 'var(--ink-soft)' }}>{trip.status_name ?? 'draft'}</span>
+        <span className="text-[12px] font-semibold px-3 py-1 rounded-full flex-shrink-0 mt-2" style={{ background: 'color-mix(in srgb, var(--ink) 6%, transparent)', color: 'var(--ink-soft)' }}>{STATUS_LABELS[trip.status_code ?? 1] ?? 'Draft'}</span>
       </div>
       {places && <p className="text-[15px] mb-6" style={{ color: 'var(--ink-soft)' }}>{places}</p>}
 
@@ -130,7 +167,16 @@ export default function TripDetail({ trip: initial }: { trip: Trip }) {
 
       {/* destinations */}
       <section className="mb-8">
-        <h2 className="text-xs font-bold uppercase mb-3" style={{ color: 'var(--accent-deep)', letterSpacing: '0.4px' }}>Destinations</h2>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-xs font-bold uppercase" style={{ color: 'var(--accent-deep)', letterSpacing: '0.4px' }}>Destinations</h2>
+          {!addingDest && (
+            <button onClick={() => setAddingDest(true)} className="text-[13px] font-semibold px-3 py-1.5 rounded-lg"
+              style={{ background: 'color-mix(in srgb, var(--accent) 14%, transparent)', color: 'var(--accent-deep)' }}>
+              + Add destination
+            </button>
+          )}
+        </div>
+
         {trip.destinations.length === 0 ? (
           <p className="text-[14px]" style={{ color: 'var(--ink-faint)' }}>No destinations added.</p>
         ) : (
@@ -138,15 +184,26 @@ export default function TripDetail({ trip: initial }: { trip: Trip }) {
             {trip.destinations.map((d) => (
               <div key={d.destination_id} className="flex items-center gap-3 rounded-xl p-3.5" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent-deep)" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></svg>
-                <span className="text-[15px] font-medium" style={{ color: 'var(--ink)' }}>{d.city ? `${d.city}, ${d.country}` : d.country}</span>
+                <span className="flex-grow text-[15px] font-medium" style={{ color: 'var(--ink)' }}>{d.city ? `${d.city}, ${d.country}` : d.country}</span>
+                <button onClick={() => removeDestination(d.destination_id)} disabled={destBusy}
+                  className="text-[12px] px-2.5 py-1 rounded-md flex-shrink-0" style={{ color: 'var(--danger)' }}>Remove</button>
               </div>
             ))}
+          </div>
+        )}
+
+        {addingDest && (
+          <div className="mt-3 rounded-xl p-4" style={{ background: 'var(--surface)', border: '1px solid var(--accent)' }}>
+            <DestinationSearch onPick={addDestination} />
+            <div className="mt-3">
+              <button onClick={() => setAddingDest(false)} className="text-[14px]" style={{ color: 'var(--ink-soft)' }}>Cancel</button>
+            </div>
           </div>
         )}
       </section>
 
       {/* travellers */}
-      <TravelersSection tripId={trip.trip_id} travelers={trip.travelers} />
+      <TravelersSection tripId={trip.trip_id} travelers={trip.travelers} currencies={currencies} />
     </div>
   );
 }
