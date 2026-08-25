@@ -71,13 +71,15 @@ export async function saveTrip(ctx: TenantContext, input: TripInput): Promise<Sa
 
     // 2. destinations
     if (input.destinations?.length) {
+      const { geocode } = await import('@/app/lib/services/geocode');
       for (let i = 0; i < input.destinations.length; i++) {
         const d = input.destinations[i];
+        const g = await geocode(d.city ?? null, d.country);
         await tx.execute({
           sql: `INSERT INTO trip_destinations
-                  (tenant_id, trip_id, country, city, country_code, display_order)
-                VALUES (?, ?, ?, ?, ?, ?)`,
-          args: [ctx.tenantId, tripId, d.country, d.city ?? null, d.countryCode ?? null, d.displayOrder ?? i],
+                  (tenant_id, trip_id, country, city, country_code, latitude, longitude, display_order)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                    args: [ctx.tenantId, tripId, d.country, d.city ?? null, g.countryCode ?? d.countryCode ?? null, g.latitude, g.longitude, d.displayOrder ?? i],
         });
       }
     }
@@ -293,14 +295,27 @@ export async function addDestination(
     [tripId]
   );
   const nextOrder = Number(rows[0]?.mx ?? -1) + 1;
+
+  let lat = d.latitude ?? null;
+  let lon = d.longitude ?? null;
+  let cc = d.countryCode ?? null;
+  // Geocode if coords are missing, OR always to get the authoritative ISO country code.
+  if (lat == null || lon == null || cc == null) {
+    const { geocode } = await import('@/app/lib/services/geocode');
+    const g = await geocode(d.city ?? null, d.country);
+    if (lat == null) lat = g.latitude;
+    if (lon == null) lon = g.longitude;
+    if (g.countryCode) cc = g.countryCode;   // geocode's ISO code wins when available
+  }
+
   const { scopedInsert } = await import('@/app/lib/db/scoped');
   await scopedInsert(ctx, 'trip_destinations', {
     trip_id: tripId,
     country: d.country,
     city: d.city ?? null,
-    country_code: d.countryCode ?? null,
-    latitude: d.latitude ?? null,
-    longitude: d.longitude ?? null,
+    country_code: cc,
+    latitude: lat,
+    longitude: lon,
     display_order: nextOrder,
   });
 }

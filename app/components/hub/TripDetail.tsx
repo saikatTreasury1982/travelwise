@@ -46,8 +46,18 @@ export default function TripDetail({ trip: initial, currencies }: { trip: Trip; 
   const [addingDest, setAddingDest] = useState(false);
   const [destBusy, setDestBusy] = useState(false);
 
-  async function addDestination(pick: GeoPick) {
-    setDestBusy(true); setError('');
+  async function addDestination(pick: { country: string; city: string | null; latitude?: number | null; longitude?: number | null }) {
+    setError('');
+    // Optimistic: show it immediately with a temporary id.
+    const tempId = -Date.now();
+    const optimistic = {
+      destination_id: tempId,
+      country: pick.country,
+      city: pick.city,
+    };
+    setTrip((t) => ({ ...t, destinations: [...t.destinations, optimistic] }));
+    setAddingDest(false);
+
     try {
       const res = await fetch(`/api/trips/${trip.trip_id}/destinations`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -55,11 +65,14 @@ export default function TripDetail({ trip: initial, currencies }: { trip: Trip; 
       });
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Could not add destination.');
       const d = await res.json();
+      // Reconcile with the server's real list (real ids).
       setTrip((t) => ({ ...t, destinations: d.destinations }));
-      setAddingDest(false);
       router.refresh();
-    } catch (err) { setError(err instanceof Error ? err.message : 'Could not add destination.'); }
-    finally { setDestBusy(false); }
+    } catch (err) {
+      // Roll back the optimistic add.
+      setTrip((t) => ({ ...t, destinations: t.destinations.filter((x) => x.destination_id !== tempId) }));
+      setError(err instanceof Error ? err.message : 'Could not add destination.');
+    }
   }
 
   async function removeDestination(destId: number) {

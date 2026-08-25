@@ -7,12 +7,21 @@ import Link from 'next/link';
 export default function TopNav({ firstName, active = 'home' }: { firstName: string; active?: string }) {
   const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [isOwner, setIsOwner] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const onDown = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setMenuOpen(false); };
     document.addEventListener('mousedown', onDown);
     return () => document.removeEventListener('mousedown', onDown);
+  }, []);
+
+  // Fetch the current user's role once, to conditionally show owner-only links.
+  useEffect(() => {
+    fetch('/api/admin/ownerTool')
+      .then((r) => r.json())
+      .then((d) => setIsOwner(d.role === 'owner'))
+      .catch(() => {});
   }, []);
 
   async function handleLogout() {
@@ -57,6 +66,12 @@ export default function TopNav({ firstName, active = 'home' }: { firstName: stri
               <Link href="/profile" className="block px-4 py-2.5 text-sm" style={{ color: 'var(--ink)' }} onClick={() => setMenuOpen(false)}>Profile</Link>
               <Link href="/account" className="block px-4 py-2.5 text-sm" style={{ color: 'var(--ink)' }} onClick={() => setMenuOpen(false)}>Account</Link>
               <Link href="/settings" className="block px-4 py-2.5 text-sm" style={{ color: 'var(--ink)' }} onClick={() => setMenuOpen(false)}>Settings</Link>
+              {isOwner && (
+                <>
+                  <div className="h-px my-1" style={{ background: 'var(--divider)' }} />
+                  <Link href="/admin" className="block px-4 py-2.5 text-sm" style={{ color: 'var(--ink)' }} onClick={() => setMenuOpen(false)}>Admin tools</Link>
+                </>
+              )}
               <div className="h-px my-1" style={{ background: 'var(--divider)' }} />
               <button
                 type="button"
