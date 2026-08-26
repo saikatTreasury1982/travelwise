@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import TravelersSection from '@/app/components/hub/TravelersSection';
 import DestinationSearch, { type GeoPick } from '@/app/components/ui/DestinationSearch';
+import TripHubCards from '@/app/components/hub/TripHubCards';
 
 interface Trip {
   trip_id: number; trip_name: string; trip_description: string | null;
@@ -217,6 +218,9 @@ export default function TripDetail({ trip: initial, currencies }: { trip: Trip; 
 
       {/* travellers */}
       <TravelersSection tripId={trip.trip_id} travelers={trip.travelers} currencies={currencies} />
+      
+      {/* Plan-this-trip module cards + AI strip (ADR-010 hub) */}
+      <TripHubCards tripId={trip.trip_id} travelerCount={trip.travelers.length} />
     </div>
   );
 }
