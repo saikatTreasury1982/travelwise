@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import TravelersSection from '@/app/components/hub/TravelersSection';
 import DestinationSearch, { type GeoPick } from '@/app/components/ui/DestinationSearch';
-import TripHubCards from '@/app/components/hub/TripHubCards';
+import TripHubCards, { type HubStats } from '@/app/components/hub/TripHubCards';
 
 interface Trip {
   trip_id: number; trip_name: string; trip_description: string | null;
@@ -31,7 +31,7 @@ function nights(a: string, b: string) {
 
 const STATUS_LABELS: Record<number, string> = { 1: 'Draft', 2: 'Planned', 3: 'Active', 4: 'Completed' };
 
-export default function TripDetail({ trip: initial, currencies }: { trip: Trip; currencies: Currency[] }) {
+export default function TripDetail({ trip: initial, currencies, hubStats }: { trip: Trip; currencies: Currency[]; hubStats: HubStats }) {
   const router = useRouter();
   const [trip, setTrip] = useState(initial);
   const [editing, setEditing] = useState<string | null>(null);
@@ -218,9 +218,9 @@ export default function TripDetail({ trip: initial, currencies }: { trip: Trip; 
 
       {/* travellers */}
       <TravelersSection tripId={trip.trip_id} travelers={trip.travelers} currencies={currencies} />
-      
+
       {/* Plan-this-trip module cards + AI strip (ADR-010 hub) */}
-      <TripHubCards tripId={trip.trip_id} travelerCount={trip.travelers.length} />
+      <TripHubCards tripId={trip.trip_id} travelerCount={trip.travelers.length} stats={hubStats} />
     </div>
   );
 }

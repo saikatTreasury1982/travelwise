@@ -3,6 +3,7 @@ import { redirect, notFound } from 'next/navigation';
 import { getUserContext } from '@/app/lib/auth/context';
 import { rawQuery } from '@/app/lib/db/client';
 import { getTripDetail } from '@/app/lib/services/trip-service';
+import { getForecast, getVariance, listAdhocExpenses } from '@/app/lib/services/expense-service';
 import TopNav from '@/app/components/hub/TopNav';
 import TripDetail from '@/app/components/hub/TripDetail';
 
@@ -30,10 +31,23 @@ export default async function TripDetailPage({ params }: { params: Promise<{ id:
     currency_symbol: c.currency_symbol == null ? null : String(c.currency_symbol),
   }));
 
+  const [forecast, variance, adhoc] = await Promise.all([
+    getForecast(ctx, tripId),
+    getVariance(ctx, tripId),
+    listAdhocExpenses(ctx, tripId),
+  ]);
+  const hubStats = {
+    baseCurrency: forecast.base_currency,
+    adhocTotal: adhoc.filter((e) => e.is_active).reduce((s, e) => s + e.estimated_amount_base, 0),
+    forecastTotal: forecast.total_base,
+    variance: variance.variance,
+    hasActuals: variance.actual_total > 0,
+  };
+
   return (
     <div style={{ background: 'var(--canvas)', minHeight: '100vh' }}>
       <TopNav firstName={firstName} active="trips" />
-      <TripDetail trip={trip} currencies={currencies} />
+      <TripDetail trip={trip} currencies={currencies} hubStats={hubStats} />
     </div>
   );
 }
