@@ -79,7 +79,7 @@ export async function saveTrip(ctx: TenantContext, input: TripInput): Promise<Sa
           sql: `INSERT INTO trip_destinations
                   (tenant_id, trip_id, country, city, country_code, latitude, longitude, display_order)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-                    args: [ctx.tenantId, tripId, d.country, d.city ?? null, g.countryCode ?? d.countryCode ?? null, g.latitude, g.longitude, d.displayOrder ?? i],
+          args: [ctx.tenantId, tripId, d.country, d.city ?? null, g.countryCode ?? d.countryCode ?? null, g.latitude, g.longitude, d.displayOrder ?? i],
         });
       }
     }
@@ -100,6 +100,19 @@ export async function saveTrip(ctx: TenantContext, input: TripInput): Promise<Sa
       }
     }
 
+    // Cover image — best-effort, from the first destination (or the trip name).
+    const coverQuery = input.destinations?.[0]?.city
+      || input.destinations?.[0]?.country
+      || input.name;
+    const { findCover } = await import('@/app/lib/services/unsplash');
+    const cover = await findCover(coverQuery);
+    if (cover) {
+      await tx.execute({
+        sql: `UPDATE trips SET cover_image_url = ?, cover_image_credit = ?, cover_image_link = ? WHERE trip_id = ?`,
+        args: [cover.url, cover.credit, cover.link, tripId],
+      });
+    }
+
     await tx.commit();
     // Every trip always has its primary traveller (the logged-in user).
     await ensurePrimaryTraveler(ctx, tripId);
@@ -115,7 +128,8 @@ export async function listTripsWithDetails(ctx: TenantContext) {
   const tripRows = await scopedQuery(
     ctx,
     `SELECT trip_id, trip_name, trip_description, start_date, end_date,
-            status_code, trip_budget, budget_currency, created_at
+            status_code, trip_budget, budget_currency, created_at,
+            cover_image_url, cover_image_credit, cover_image_link
      FROM trips WHERE {{tenant}} ORDER BY start_date DESC, created_at DESC`,
     []
   );
@@ -152,6 +166,9 @@ export async function listTripsWithDetails(ctx: TenantContext) {
         city: d.city == null ? null : String(d.city),
         display_order: Number(d.display_order),
       })),
+      cover_image_url: t.cover_image_url == null ? null : String(t.cover_image_url),
+      cover_image_credit: t.cover_image_credit == null ? null : String(t.cover_image_credit),
+      cover_image_link: t.cover_image_link == null ? null : String(t.cover_image_link),
     });
   }
   return trips;

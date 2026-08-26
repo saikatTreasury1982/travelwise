@@ -6,6 +6,9 @@ interface TripCardProps {
     trip_id: number; trip_name: string; start_date: string; end_date: string;
     status_name: string | null; trip_budget: number | null; budget_currency: string | null;
     destinations: Array<{ country: string; city: string | null }>;
+    cover_image_url?: string | null;
+    cover_image_credit?: string | null;
+    cover_image_link?: string | null;
   };
 }
 
@@ -16,10 +19,35 @@ function fmtDate(d: string) {
 
 export default function TripCard({ trip }: TripCardProps) {
   const places = trip.destinations.map((d) => d.city || d.country).filter(Boolean).join(', ');
+  const hasCover = !!trip.cover_image_url;
+
   return (
     <Link href={`/trips/${trip.trip_id}`} className="block rounded-2xl overflow-hidden transition-transform hover:-translate-y-0.5"
       style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
-      <div style={{ height: 88, backgroundColor: 'var(--panel)', backgroundImage: 'radial-gradient(200px 120px at 30% 20%, rgba(52,96,156,0.6), transparent)' }} />
+      {/* header — cover photo, or the navy gradient fallback */}
+      <div className="relative" style={{ height: 120, backgroundColor: 'var(--panel)' }}>
+        {hasCover ? (
+          <>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={trip.cover_image_url as string}
+              alt={places || trip.trip_name}
+              className="w-full h-full object-cover"
+              loading="lazy"
+            />
+            {/* subtle bottom gradient so any overlaid text stays legible */}
+            <div className="absolute inset-x-0 bottom-0 h-10" style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.45), transparent)' }} />
+            {trip.cover_image_credit && (
+              <span className="absolute bottom-1 right-2 text-[10px]" style={{ color: 'rgba(255,255,255,0.75)' }}>
+                {trip.cover_image_credit}
+              </span>
+            )}
+          </>
+        ) : (
+          <div className="w-full h-full" style={{ backgroundImage: 'radial-gradient(200px 120px at 30% 20%, rgba(52,96,156,0.6), transparent)' }} />
+        )}
+      </div>
+
       <div className="p-4">
         <div className="flex items-center justify-between mb-1.5">
           <span className="text-[16px] font-bold truncate" style={{ color: 'var(--ink)' }}>{trip.trip_name}</span>
