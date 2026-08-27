@@ -44,6 +44,7 @@ const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
           onFocus={(e) => { e.currentTarget.style.borderColor = error ? 'var(--danger)' : 'var(--accent)'; props.onFocus?.(e); }}
           onBlur={(e) => { e.currentTarget.style.borderColor = error ? 'var(--danger)' : 'var(--border)'; props.onBlur?.(e); }}
           {...props}
+          suppressHydrationWarning
         />
         {rightIcon && (
           <div className="absolute right-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--ink-faint)' }}>{rightIcon}</div>
