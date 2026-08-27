@@ -64,18 +64,18 @@ export async function resolveTripStatus(
  * Single round-trip via UNION ALL — returns the first existing row and stops.
  */
 async function hasPlanningActivity(ctx: TenantContext, tripId: number): Promise<boolean> {
-    const rows = await scopedQuery<{ n: number }>(
-        ctx,
-        `SELECT 1 AS n FROM expenses
+  // Only tables that EXIST today are queried: expenses (ad-hoc) + checklist.
+  // Checklist is scoped via its parent categories (checklist_items -> category -> trip).
+  const rows = await scopedQuery<{ n: number }>(
+    ctx,
+    `SELECT 1 AS n FROM expenses
        WHERE {{tenant}} AND trip_id = ? AND source_module = 'adhoc'
      UNION ALL
-     SELECT 1 AS n FROM checklist_items
-       WHERE trip_id IN (SELECT trip_id FROM trips WHERE {{tenant}} AND trip_id = ?)
-     -- UNION ALL SELECT 1 AS n FROM flights         WHERE {{tenant}} AND trip_id = ?
-     -- UNION ALL SELECT 1 AS n FROM lodging         WHERE {{tenant}} AND trip_id = ?
-     -- UNION ALL SELECT 1 AS n FROM itinerary_items WHERE {{tenant}} AND trip_id = ?
+     SELECT 1 AS n FROM checklist_items ci
+       JOIN checklist_categories cc ON cc.category_id = ci.category_id
+       WHERE cc.trip_id IN (SELECT trip_id FROM trips WHERE {{tenant}} AND trip_id = ?)
      LIMIT 1`,
-        [tripId, tripId],
-    );
-    return rows.length > 0;
+    [tripId, tripId],
+  );
+  return rows.length > 0;
 }

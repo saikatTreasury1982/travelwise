@@ -7,6 +7,7 @@ import { scopedQuery, scopedExecute } from '@/app/lib/db/scoped';
 import type { TenantContext } from '@/app/lib/db/scoped';
 import { ensurePrimaryTraveler } from '@/app/lib/services/traveler-service';
 import { resolveTripStatus } from '@/app/lib/services/trip-status';
+import { TRIP_STATUS } from '@/app/lib/services/trip-status';
 
 // The structured trip the AI produces (and the form could produce too).
 export interface TripDestinationInput {
@@ -375,4 +376,56 @@ export async function removeDestination(
     `DELETE FROM trip_destinations WHERE {{tenant}} AND trip_id = ? AND destination_id = ?`,
     [tripId, destinationId]
   );
+}
+
+/**
+ * Manually suspend or reactivate a trip (ADR-006 Amendment B — the only
+ * manual status transition). Suspend stores code 4 (frozen). Reactivate
+ * clears the freeze by recomputing via resolveTripStatus, which lands the
+ * trip on its correct auto-status (Draft/Active/Completed).
+ * Returns the resulting status_code, or null if not found/owned.
+ */
+export async function setTripSuspended(
+  ctx: TenantContext, tripId: number, suspend: boolean,
+): Promise<number | null> {
+  // Confirm ownership + get end_date for the reactivate recompute.
+  const owned = await scopedQuery(
+    ctx,
+    `SELECT trip_id, end_date, status_code FROM trips WHERE {{tenant}} AND trip_id = ? LIMIT 1`,
+    [tripId],
+  );
+  const row = owned[0];
+  if (!row) return null;
+
+  if (suspend) {
+    // A Completed trip cannot be suspended — it's already over.
+    const resolved = await resolveTripStatus(ctx, {
+      trip_id: tripId,
+      status_code: row.status_code == null ? 1 : Number(row.status_code),
+      end_date: row.end_date == null ? null : String(row.end_date),
+    });
+
+    if (resolved === TRIP_STATUS.COMPLETED) {
+      return TRIP_STATUS.COMPLETED; // no-op; caller sees it stayed Completed
+    }
+    await scopedExecute(
+      ctx,
+      `UPDATE trips SET status_code = ?, updated_at = ? WHERE {{tenant}} AND trip_id = ?`,
+      [TRIP_STATUS.SUSPENDED, new Date().toISOString().replace('T', ' ').slice(0, 19), tripId],
+    );
+    return TRIP_STATUS.SUSPENDED;
+  }
+
+  // Reactivate: temporarily set to Draft so resolveTripStatus won't see the
+  // Suspended freeze, then let it recompute + self-heal to the right code.
+  await scopedExecute(
+    ctx,
+    `UPDATE trips SET status_code = ?, updated_at = ? WHERE {{tenant}} AND trip_id = ?`,
+    [TRIP_STATUS.DRAFT, new Date().toISOString().replace('T', ' ').slice(0, 19), tripId],
+  );
+  return await resolveTripStatus(ctx, {
+    trip_id: tripId,
+    status_code: TRIP_STATUS.DRAFT,
+    end_date: row.end_date == null ? null : String(row.end_date),
+  });
 }

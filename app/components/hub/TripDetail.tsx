@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import TravelersSection from '@/app/components/hub/TravelersSection';
 import DestinationSearch, { type GeoPick } from '@/app/components/ui/DestinationSearch';
 import TripHubCards, { type HubStats } from '@/app/components/hub/TripHubCards';
+import TripStatusControl from '@/app/components/hub/TripStatusControl';
 
 interface Trip {
   trip_id: number; trip_name: string; trip_description: string | null;
@@ -29,7 +30,7 @@ function nights(a: string, b: string) {
   try { return Math.round((new Date(b).getTime() - new Date(a).getTime()) / 86400000); } catch { return 0; }
 }
 
-const STATUS_LABELS: Record<number, string> = { 1: 'Draft', 2: 'Planned', 3: 'Active', 4: 'Completed' };
+const STATUS_LABELS: Record<number, string> = { 1: 'Draft', 2: 'Active', 3: 'Completed', 4: 'Suspended' };
 
 function Chevron({ open }: { open: boolean }) {
   return (
@@ -140,7 +141,9 @@ export default function TripDetail({ trip: initial, currencies, hubStats }: { tr
         ) : (
           <h1 onClick={() => setEditing('name')} style={{ fontFamily: 'var(--font-display)', fontSize: 'clamp(30px,4vw,42px)', lineHeight: 1.05, color: 'var(--ink)', ...editHint }} title="Click to edit">{trip.trip_name}</h1>
         )}
-        <span className="text-[12px] font-semibold px-3 py-1 rounded-full flex-shrink-0 mt-2" style={{ background: 'color-mix(in srgb, var(--ink) 6%, transparent)', color: 'var(--ink-soft)' }}>{STATUS_LABELS[trip.status_code ?? 1] ?? 'Draft'}</span>
+        <div className="flex-shrink-0 mt-2">
+          <TripStatusControl tripId={trip.trip_id} statusCode={trip.status_code ?? 1} />
+        </div>
       </div>
       {places && <p className="text-[15px] mb-6" style={{ color: 'var(--ink-soft)' }}>{places}</p>}
 
