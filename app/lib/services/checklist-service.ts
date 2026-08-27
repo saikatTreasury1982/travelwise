@@ -130,3 +130,21 @@ export async function mergeGenerated(
   }
   return { addedCategories, addedItems };
 }
+
+export async function getChecklistStats(ctx: TenantContext, tripId: number): Promise<{ total: number; done: number; highPending: number }> {
+  const rows = await scopedQuery(
+    ctx,
+    `SELECT i.is_done, i.priority
+     FROM checklist_items i
+     JOIN checklist_categories c ON c.category_id = i.category_id
+     WHERE {{tenant:i}} AND c.trip_id = ?`,
+    [tripId]
+  );
+  let total = 0, done = 0, highPending = 0;
+  for (const r of rows) {
+    total++;
+    if (Number(r.is_done) === 1) done++;
+    else if (r.priority === 'high') highPending++;
+  }
+  return { total, done, highPending };
+}

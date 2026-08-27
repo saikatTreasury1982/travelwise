@@ -6,10 +6,13 @@ interface ModuleCard { key: string; icon: string; title: string; hint: string; }
 
 export interface HubStats {
   baseCurrency: string;
-  adhocTotal: number;      // active ad-hoc total (base)
-  forecastTotal: number;   // full forecast total (base)
-  variance: number;        // actual − forecast (base)
-  hasActuals: boolean;     // any actuals recorded
+  adhocTotal: number;
+  forecastTotal: number;
+  variance: number;
+  hasActuals: boolean;
+  checklistTotal: number;
+  checklistDone: number;
+  checklistHighPending: number;
 }
 
 function money(n: number, ccy: string) {
@@ -17,13 +20,17 @@ function money(n: number, ccy: string) {
 }
 
 export default function TripHubCards({ tripId, travelerCount, stats }: { tripId: number; travelerCount: number; stats: HubStats }) {
-  const { baseCurrency, adhocTotal, forecastTotal, variance, hasActuals } = stats;
+    const { baseCurrency, adhocTotal, forecastTotal, variance, hasActuals, checklistTotal, checklistDone, checklistHighPending } = stats;
 
   const MODULES: (ModuleCard & { stat: string; statColor?: string })[] = [
     { key: 'flights', icon: '✈️', title: 'Flights', hint: 'AI can suggest options', stat: 'Not started' },
     { key: 'lodging', icon: '🏨', title: 'Lodging', hint: 'AI can suggest stays', stat: 'Not started' },
     { key: 'itinerary', icon: '📅', title: 'Itinerary', hint: 'AI can generate a plan', stat: 'Not started' },
-    { key: 'checklist', icon: '🧳', title: 'Checklist', hint: 'AI can build a list', stat: 'Not started' },
+    {
+      key: 'checklist', icon: '🧳', title: 'Checklist',
+      hint: checklistHighPending > 0 ? `${checklistHighPending} high-priority to pack` : 'AI can build a list',
+      stat: checklistTotal > 0 ? `${checklistDone} / ${checklistTotal} done` : 'Not started'
+    },
     {
       key: 'adhoc', icon: '🧮', title: 'Ad-hoc Expenses', hint: 'Extra costs outside modules',
       stat: adhocTotal > 0 ? money(adhocTotal, baseCurrency) : 'Not started'

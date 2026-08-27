@@ -33,7 +33,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   try {
     const response = await anthropic.messages.create({
       model: MODEL,
-      max_tokens: 1500,
+      max_tokens: 4096,
       system: checklistSystemPrompt({
         homeCurrency: '', tripName: trip.trip_name, destinations,
         startDate: trip.start_date, endDate: trip.end_date, nights: nights(trip.start_date, trip.end_date),
@@ -44,14 +44,23 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       messages: [{ role: 'user', content: 'Generate the checklist for this trip.' }],
     });
 
+    console.log('[checklist] stop:', response.stop_reason,
+      'blocks:', response.content.map((c) => c.type + (c.type === 'tool_use' ? `:${c.name}` : '')).join(', '));
+
     const toolUse = response.content.find((c): c is Anthropic.ToolUseBlock => c.type === 'tool_use' && c.name === 'generate_checklist');
     if (!toolUse) return NextResponse.json({ error: 'AI did not return a checklist. Try again.' }, { status: 200 });
+
+    if (response.stop_reason === 'max_tokens') {
+      return NextResponse.json({ error: 'The checklist was too long to generate in one go. Please try again.' }, { status: 200 });
+    }
 
     const { categories } = toolUse.input as {
       categories: { category: string; kind?: 'packing' | 'task'; items: { name: string; priority?: string | null }[] }[];
     };
-    const merged = await mergeGenerated(ctx, tripId, categories ?? []);
-    await writeAudit({ event: 'trip.update', result: 'success', tenantId: ctx.tenantId, userId: ctx.userId, detail: { tripId, action: 'checklist.generate', ...merged } });
+    if (!Array.isArray(categories) || categories.length === 0) {
+      return NextResponse.json({ error: 'The AI returned an empty checklist. Please try again.' }, { status: 200 });
+    }
+    const merged = await mergeGenerated(ctx, tripId, categories); await writeAudit({ event: 'trip.update', result: 'success', tenantId: ctx.tenantId, userId: ctx.userId, detail: { tripId, action: 'checklist.generate', ...merged } });
 
     const checklist = await listChecklist(ctx, tripId);
     return NextResponse.json({ ok: true, ...merged, checklist });
