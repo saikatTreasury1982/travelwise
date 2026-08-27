@@ -6,6 +6,7 @@ import { db } from '../db/client';
 import { scopedQuery, scopedExecute } from '@/app/lib/db/scoped';
 import type { TenantContext } from '@/app/lib/db/scoped';
 import { ensurePrimaryTraveler } from '@/app/lib/services/traveler-service';
+import { resolveTripStatus } from '@/app/lib/services/trip-status';
 
 // The structured trip the AI produces (and the form could produce too).
 export interface TripDestinationInput {
@@ -154,7 +155,11 @@ export async function listTripsWithDetails(ctx: TenantContext) {
       trip_description: t.trip_description == null ? null : String(t.trip_description),
       start_date: String(t.start_date),
       end_date: String(t.end_date),
-      status_code: t.status_code == null ? null : Number(t.status_code),
+      status_code: await resolveTripStatus(ctx, {
+        trip_id: Number(t.trip_id),
+        status_code: t.status_code == null ? 1 : Number(t.status_code),
+        end_date: String(t.end_date),
+      }),
       trip_budget: t.trip_budget == null ? null : Number(t.trip_budget),
       budget_currency: t.budget_currency == null ? null : String(t.budget_currency),
       created_at: t.created_at == null ? null : String(t.created_at),
@@ -185,6 +190,13 @@ export async function getTripDetail(ctx: TenantContext, tripId: number) {
   );
   const t = tripRows[0];
   if (!t) return null;
+
+  // Self-healing status (ADR-006 Amendment B): compute-on-read, persist if changed.
+  const resolvedStatus = await resolveTripStatus(ctx, {
+    trip_id: Number(t.trip_id),
+    status_code: t.status_code == null ? 1 : Number(t.status_code),
+    end_date: t.end_date == null ? null : String(t.end_date),
+  });
 
   const destRows = await scopedQuery(
     ctx,
@@ -219,7 +231,7 @@ export async function getTripDetail(ctx: TenantContext, tripId: number) {
     trip_description: t.trip_description == null ? null : String(t.trip_description),
     start_date: String(t.start_date),
     end_date: String(t.end_date),
-    status_code: t.status_code == null ? null : Number(t.status_code),
+    status_code: resolvedStatus,
     trip_budget: t.trip_budget == null ? null : Number(t.trip_budget),
     budget_currency: t.budget_currency == null ? null : String(t.budget_currency),
     created_at: t.created_at == null ? null : String(t.created_at),
