@@ -40,6 +40,21 @@ export default function ChecklistView({ tripId, initial }: { tripId: number; ini
     finally { setGenerating(false); }
   }
 
+  async function togglePriority(itemId: number, current: string | null) {
+    const next = current === 'high' ? 'normal' : 'high';
+    // optimistic
+    setCats((cs) => cs.map((c) => ({ ...c, items: c.items.map((i) => i.item_id === itemId ? { ...i, priority: next } : i) })));
+    try {
+      const res = await fetch(`/api/trips/${tripId}/checklist/items/${itemId}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ priority: next }),
+      });
+      if (!res.ok) throw new Error();
+    } catch {
+      setCats((cs) => cs.map((c) => ({ ...c, items: c.items.map((i) => i.item_id === itemId ? { ...i, priority: current } : i) })));
+      setError('Could not update priority.');
+    }
+  }
+
   async function toggleItem(itemId: number, isDone: boolean) {
     // optimistic
     setCats((cs) => cs.map((c) => ({ ...c, items: c.items.map((i) => i.item_id === itemId ? { ...i, is_done: isDone ? 1 : 0 } : i) })));
@@ -147,7 +162,23 @@ export default function ChecklistView({ tripId, initial }: { tripId: number; ini
                       style={{ border: `1.5px solid ${it.is_done ? 'var(--accent)' : 'var(--border)'}`, background: it.is_done ? 'var(--accent)' : 'transparent' }}>
                       {it.is_done ? <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--accent-ink)" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg> : null}
                     </button>
-                    {it.priority === 'high' && <span title="High priority" style={{ color: 'var(--danger)', fontSize: 11 }}>●</span>}
+                    <button
+                      onClick={() => togglePriority(it.item_id, it.priority)}
+                      title={it.priority === 'high' ? 'High priority — click to set Normal' : 'Normal priority — click to set High'}
+                      className="flex items-center gap-1 flex-shrink-0 rounded px-1 py-0.5 transition-colors"
+                      style={{ cursor: 'pointer' }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = 'color-mix(in srgb, var(--ink) 6%, transparent)'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                    >
+                      <span style={{ color: it.priority === 'high' ? 'var(--danger)' : 'var(--ink-faint)', fontSize: 11 }}>
+                        {it.priority === 'high' ? '●' : '○'}
+                      </span>
+                      {it.priority === 'high' && (
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: 'color-mix(in srgb, var(--danger) 14%, transparent)', color: 'var(--danger)' }}>
+                          High
+                        </span>
+                      )}
+                    </button>
                     <span className="flex-grow text-[14px]" style={{ color: it.is_done ? 'var(--ink-faint)' : 'var(--ink)', textDecoration: it.is_done ? 'line-through' : 'none' }}>{it.item_name}</span>
                     <button onClick={() => removeItem(it.item_id)} className="text-[12px] opacity-0 group-hover:opacity-100 transition-opacity" style={{ color: 'var(--ink-faint)' }}>✕</button>
                   </div>
