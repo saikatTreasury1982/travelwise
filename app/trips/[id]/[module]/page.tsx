@@ -11,6 +11,7 @@ import { listActuals, getVariance } from '@/app/lib/services/expense-service';
 import ActualsView from '@/app/components/hub/ActualsView';
 import { listChecklist } from '@/app/lib/services/checklist-service';
 import ChecklistView from '@/app/components/hub/ChecklistView';
+import FlightBookingsView from '@/app/components/hub/flights/FlightBookingsView';
 
 export const dynamic = 'force-dynamic';
 
@@ -128,6 +129,24 @@ export default async function TripModulePage({ params }: { params: Promise<{ id:
           <h1 className="mb-2" style={{ fontFamily: 'var(--font-display)', fontSize: 'clamp(28px,4vw,38px)', color: 'var(--ink)' }}>Checklist</h1>
           <p className="text-[14px] mb-6" style={{ color: 'var(--ink-soft)' }}>Packing and pre-trip tasks — let the co-pilot build a list tailored to your trip.</p>
           <ChecklistView tripId={tripId} initial={checklist} />
+        </div>
+      </div>
+    );
+  }
+
+  // Real module: Flights (Door C — upload booking; Doors A/B coming soon)
+  if (module === 'flights') {
+    return (
+      <div style={{ background: 'var(--canvas)', minHeight: '100vh' }}>
+        <TopNav firstName={firstName} active="trips" />
+        <div className="px-6 md:px-10 py-8 max-w-[900px] mx-auto">
+          <Link href={`/trips/${tripId}`} className="text-[13px] font-medium inline-flex items-center gap-1.5 mb-6" style={{ color: 'var(--ink-soft)' }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
+            Back to {trip.trip_name}
+          </Link>
+          <h1 className="mb-2" style={{ fontFamily: 'var(--font-display)', fontSize: 'clamp(28px,4vw,38px)', color: 'var(--ink)' }}>Flights</h1>
+          <p className="text-[14px] mb-6" style={{ color: 'var(--ink-soft)' }}>Upload a booking and the co-pilot reads it in — flight search and AI suggestions are coming soon.</p>
+          <FlightBookingsView tripId={tripId} currencies={currencies} />
         </div>
       </div>
     );
