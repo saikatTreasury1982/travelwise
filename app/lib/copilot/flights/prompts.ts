@@ -40,6 +40,7 @@ You do NOT have live fares. Every price is a REASONED ESTIMATE in ${opts.homeCur
 
 RULES
 - CRITICAL: Use the trip's actual dates. The outbound flight departs on or near the trip START date, and (for return trips) the return departs on or near the trip END date. Do NOT shift to a different month or invent dates. If the trip is 19–25 July, the flights are in July, not any other month.
+- If the destination city has NO commercial airport of its own, use the NEAREST major airport that serves it, and say which in your summary (e.g. "Kyoto has no airport — these fly into Osaka Kansai (KIX), ~75 min away"). Same for the origin if the traveller names a city without an airport.
 - Real airlines that fly the route; real IATA codes.
 - One suggest_flight tool call per option.
 - ${opts.tripType === 'one_way' ? 'One-way: outbound leg(s) only, NO return leg.' : 'Return: outbound + return leg (connections add legs within a direction).'}
