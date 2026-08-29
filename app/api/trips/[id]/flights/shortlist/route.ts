@@ -35,6 +35,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       flight_number: l.flight_number ?? null,
       cabin_class: l.cabin_class ?? null,
       stops_count: l.stops_count ?? 0,
+      duration_minutes: l.duration_minutes ?? null,
     })),
     { status: 'shortlisted', source: 'ai' },
   );

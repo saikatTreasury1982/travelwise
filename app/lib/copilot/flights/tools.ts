@@ -29,6 +29,7 @@ export const SUGGEST_FLIGHT_TOOL: Anthropic.Tool = {
             flight_number: { type: 'string', description: 'e.g. "QF61". Optional.' },
             cabin_class: { type: 'string', description: 'economy | premium | business | first.' },
             stops_count: { type: 'number', description: '0 for direct.' },
+            duration_minutes: { type: 'number', description: 'Flight time for this leg in whole minutes (e.g. 9h30m = 570).' },
           },
           required: ['departure_airport_code', 'arrival_airport_code', 'departure_datetime'],
         },

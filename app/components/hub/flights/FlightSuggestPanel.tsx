@@ -7,6 +7,7 @@ interface Leg {
   departure_airport_code?: string; arrival_airport_code?: string;
   departure_datetime?: string; arrival_datetime?: string;
   airline?: string; flight_number?: string; cabin_class?: string; stops_count?: number;
+  duration_minutes?: number;
 }
 interface Option { label?: string; airline: string; estimated_price: number; currency_code: string; legs: Leg[]; }
 
@@ -24,6 +25,9 @@ function fmtDT(dt?: string) {
     return time ? `${nice} ${time.slice(0, 5)}` : nice;
   } catch { return dt.replace('T', ' '); }
 }
+
+const fmtDur = (m?: number) => (m == null ? '' : `${Math.floor(m / 60)}h ${m % 60}m`);
+
 const stopsLabel = (legs: Leg[]) => {
   const s = legs.reduce((n, l) => n + (l.stops_count ?? 0), 0);
   return s === 0 && legs.length <= 1 ? 'direct' : `${legs.length > 1 ? legs.length + ' legs' : ''}${s ? ` · ${s} stop${s > 1 ? 's' : ''}` : ''}`.trim().replace(/^·\s*/, '') || 'direct';
@@ -160,6 +164,7 @@ export default function FlightSuggestPanel({ tripId, onShortlisted, onClose }: P
                           <span className="font-mono" style={{ color: 'var(--accent-deep)' }}>{l.flight_number || l.airline?.slice(0, 2).toUpperCase() || '—'}</span>
                           <span>{l.departure_airport_code} → {l.arrival_airport_code}</span>
                           <span style={{ color: 'var(--ink-faint)' }}>{fmtDT(l.departure_datetime)}</span>
+                          {l.duration_minutes != null && <span style={{ color: 'var(--ink-faint)' }}>· {fmtDur(l.duration_minutes)}</span>}
                           {l.cabin_class && <span className="ml-auto text-[11px]" style={{ color: 'var(--ink-faint)' }}>{l.cabin_class}</span>}
                         </div>
                       ))}

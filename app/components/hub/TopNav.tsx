@@ -37,7 +37,7 @@ export default function TopNav({ firstName, active = 'home' }: { firstName: stri
   ];
 
   return (
-    <div className="flex items-center justify-between px-6 md:px-10 py-4" style={{ borderBottom: '1px solid var(--divider)', background: 'var(--canvas)' }}>
+    <div className="flex items-center justify-between px-6 md:px-10 py-4" style={{ position: 'sticky', top: 0, zIndex: 40, borderBottom: '1px solid var(--divider)', background: 'var(--canvas)' }}>
       <Link href="/dashboard" className="flex items-center gap-2.5" style={{ color: 'var(--ink)' }}>
         <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M3.5 12h17" /><path d="M12 3a15 15 0 0 1 0 18 15 15 0 0 1 0-18z" /></svg>
         <span style={{ fontFamily: 'var(--font-display)', fontSize: 20 }}>Travelwise</span>
