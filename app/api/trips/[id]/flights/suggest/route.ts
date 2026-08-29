@@ -14,6 +14,13 @@ export const maxDuration = 60;
 const MODEL = 'claude-sonnet-4-5';
 interface ClientMessage { role: 'user' | 'assistant'; content: string; }
 
+/** Force a datetime's DATE to targetDate, keeping its time-of-day. */
+function snapDate(dt: string | null | undefined, targetDate: string): string | null {
+    if (!dt) return dt ?? null;
+    const time = dt.includes('T') ? dt.split('T')[1] : '00:00';
+    return `${targetDate}T${time}`;
+}
+
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
     const ctx = await getUserContext();
     if (!ctx) return NextResponse.json({ error: 'Not signed in' }, { status: 401 });
@@ -43,7 +50,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
     const dests = trip.destinations.map((d) => `${d.city ? d.city + ', ' : ''}${d.country}`);
     const routeHint = `Trip destinations (the traveller will pick which one this flight is for): ${dests.join(' · ') || 'unspecified'}.
-                        Dates: ${trip.start_date} to ${trip.end_date}.
+                        TRIP DATES (use these EXACTLY — do not change the month): departs ${trip.start_date}, returns ${trip.end_date}. Outbound flight is on/near ${trip.start_date}; return is on/near ${trip.end_date}.
                         Travellers: ${trip.travelers.filter((t) => t.is_active).length}.
                         The departure origin is UNKNOWN — you must ask the traveller.`;
 
@@ -79,7 +86,20 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
             for (const block of response.content) {
                 if (block.type !== 'tool_use') continue;
                 if (block.name === 'suggest_flight') {
-                    collected.push(block.input);   // proposed option — NOT saved yet
+                    const opt = block.input as any;
+                    if (Array.isArray(opt.legs) && opt.legs.length > 0) {
+                        // Snap outbound → trip start date, return → trip end date (keep the model's time-of-day).
+                        opt.legs = opt.legs.map((l: any, i: number) => {
+                            const isReturn = i === opt.legs.length - 1 && opt.legs.length > 1;
+                            const targetDate = isReturn ? trip.end_date : trip.start_date;
+                            return {
+                                ...l,
+                                departure_datetime: snapDate(l.departure_datetime, targetDate),
+                                arrival_datetime: snapDate(l.arrival_datetime, targetDate),
+                            };
+                        });
+                    }
+                    collected.push(opt);
                     toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: JSON.stringify({ ok: true }) });
                 } else {
                     toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: 'Unknown tool.', is_error: true });

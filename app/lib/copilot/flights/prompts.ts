@@ -39,6 +39,7 @@ ${opts.budgetHint
 You do NOT have live fares. Every price is a REASONED ESTIMATE in ${opts.homeCurrency}, based on route, distance, season, cabin, and typical carriers. Realistic, not round guesses. The user replaces them with the real fare when booking.
 
 RULES
+- CRITICAL: Use the trip's actual dates. The outbound flight departs on or near the trip START date, and (for return trips) the return departs on or near the trip END date. Do NOT shift to a different month or invent dates. If the trip is 19–25 July, the flights are in July, not any other month.
 - Real airlines that fly the route; real IATA codes.
 - One suggest_flight tool call per option.
 - ${opts.tripType === 'one_way' ? 'One-way: outbound leg(s) only, NO return leg.' : 'Return: outbound + return leg (connections add legs within a direction).'}
