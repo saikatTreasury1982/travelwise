@@ -96,13 +96,12 @@ export default function AirportCombobox({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className={cn(
-          'w-full px-2 py-1.5 rounded text-left text-sm bg-white/10 border transition-colors',
-          'focus:outline-none focus:border-primary-400',
-          highlight ? 'border-amber-400/60 bg-amber-400/5' : 'border-white/20',
-          value ? 'text-white' : 'text-white/40',
-          className
-        )}
+        className={cn('w-full px-2 py-1.5 rounded text-left text-sm transition-colors focus:outline-none', className)}
+        style={{
+          background: highlight ? 'color-mix(in srgb, var(--accent) 6%, var(--surface))' : 'var(--surface)',
+          border: `1px solid ${highlight ? 'var(--accent)' : 'var(--border)'}`,
+          color: value ? 'var(--ink)' : 'var(--ink-faint)',
+        }}
       >
         {label}
       </button>
@@ -117,13 +116,15 @@ export default function AirportCombobox({
         onChange={(e) => setQuery(e.target.value)}
         onKeyDown={onKey}
         placeholder="City or airport…"
-        className="w-full px-2 py-1.5 rounded text-sm bg-white/10 border border-primary-400 text-white placeholder:text-white/30 focus:outline-none"
+        className="w-full px-2 py-1.5 rounded text-sm focus:outline-none"
+        style={{ background: 'var(--surface)', border: '1px solid var(--accent)', color: 'var(--ink)' }}
       />
       {(loading || results.length > 0 || query.trim().length >= 2) && (
-        <div className="absolute z-50 mt-1 w-72 max-h-64 overflow-y-auto custom-scrollbar bg-gray-900/95 backdrop-blur-xl border border-white/20 rounded-lg shadow-2xl">
-          {loading && <div className="px-3 py-2 text-sm text-white/50">Searching…</div>}
+        <div className="absolute z-50 mt-1 w-72 max-h-64 overflow-y-auto custom-scrollbar rounded-lg shadow-2xl"
+          style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+          {loading && <div className="px-3 py-2 text-sm" style={{ color: 'var(--ink-faint)' }}>Searching…</div>}
           {!loading && results.length === 0 && query.trim().length >= 2 && (
-            <div className="px-3 py-2 text-sm text-white/50">No airports found</div>
+            <div className="px-3 py-2 text-sm" style={{ color: 'var(--ink-faint)' }}>No airports found</div>
           )}
           {!loading && results.map((a, i) => (
             <button
@@ -131,16 +132,14 @@ export default function AirportCombobox({
               type="button"
               onMouseEnter={() => setActive(i)}
               onClick={() => choose(a)}
-              className={cn(
-                'w-full px-3 py-2 text-left flex items-center gap-3 transition-colors',
-                i === active ? 'bg-primary-500/20' : 'hover:bg-white/5'
-              )}
+              className="w-full px-3 py-2 text-left flex items-center gap-3 transition-colors"
+              style={{ background: i === active ? 'color-mix(in srgb, var(--accent) 15%, transparent)' : 'transparent' }}
             >
-              <span className="font-mono text-sm text-primary-300 w-10 shrink-0">{a.iata_code}</span>
+              <span className="font-mono text-sm w-10 shrink-0" style={{ color: 'var(--accent-deep)' }}>{a.iata_code}</span>
               <span className="min-w-0 flex-1">
-                <span className="block text-sm text-white truncate">{a.airport_name}</span>
+                <span className="block text-sm truncate" style={{ color: 'var(--ink)' }}>{a.airport_name}</span>
                 {a.city && (
-                  <span className="block text-xs text-white/50 truncate">
+                  <span className="block text-xs truncate" style={{ color: 'var(--ink-soft)' }}>
                     {a.city}{a.country_code ? `, ${a.country_code}` : ''}
                   </span>
                 )}

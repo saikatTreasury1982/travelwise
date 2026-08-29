@@ -161,14 +161,15 @@ export default function FlightBookingReview({ tripId, bookingId, data, initialBe
                     <input value={booking.airline_pnr ?? ''} onChange={(e) => setBookingField('airline_pnr', e.target.value)} style={inputStyle(isFlagged('booking.airline_pnr'))} />
                 </Field>
                 <Field label="Total paid">
-                    <div className="flex gap-1 items-start">
-                        <CurrencyCombobox
-                            value={booking.currency_code ?? ''}
-                            currencies={currencies}
-                            onSelect={(code) => setBookingField('currency_code', code)}
-                            className="!h-[38px] w-24"
-                        />
-                        <input type="number" value={booking.total_paid ?? ''} onChange={(e) => setBookingField('total_paid', e.target.value ? parseFloat(e.target.value) : null)} style={inputStyle(isFlagged('booking.total_paid'))} />
+                    <div className="flex gap-1 items-stretch">
+                        <div className="w-24 [&>button]:!h-[34px] [&>button]:!px-2 [&>button]:!py-0 [&>button]:!text-[14px] [&>button]:!rounded-lg [&_input]:!h-[34px]">
+                            <CurrencyCombobox
+                                value={booking.currency_code ?? ''}
+                                currencies={currencies}
+                                onSelect={(code) => setBookingField('currency_code', code)}
+                            />
+                        </div>
+                        <input type="number" value={booking.total_paid ?? ''} onChange={(e) => setBookingField('total_paid', e.target.value ? parseFloat(e.target.value) : null)} style={{ ...inputStyle(isFlagged('booking.total_paid')), height: 34 }} />
                     </div>
                 </Field>
             </div>

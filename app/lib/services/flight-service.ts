@@ -281,3 +281,14 @@ export async function listBookings(ctx: TenantContext, tripId: number) {
   }
   return result;
 }
+
+/** Count of confirmed flight bookings for a trip (hub card stat). */
+export async function getConfirmedFlightCount(ctx: TenantContext, tripId: number): Promise<number> {
+  const rows = await scopedQuery(
+    ctx,
+    `SELECT COUNT(*) AS n FROM flight_bookings
+     WHERE {{tenant}} AND trip_id = ? AND status = 'confirmed'`,
+    [tripId],
+  );
+  return Number(rows[0]?.n ?? 0);
+}

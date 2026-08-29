@@ -14,9 +14,10 @@ interface Props {
   onSelect: (code: string) => void;
   placeholder?: string;
   className?: string;
+  size?: 'default' | 'compact';
 }
 
-export default function CurrencyCombobox({ value, currencies, onSelect, placeholder = 'Currency', className }: Props) {
+export default function CurrencyCombobox({ value, currencies, onSelect, placeholder = 'Currency', className, size = 'default' }: Props) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(0);
@@ -46,7 +47,10 @@ export default function CurrencyCombobox({ value, currencies, onSelect, placehol
     else if (e.key === 'Escape') setOpen(false);
   };
 
-  const fieldBase = 'h-[52px] px-4 rounded-[var(--radius-md,11px)] text-[15px] text-left transition-colors focus:outline-none';
+  const fieldBase = cn(
+    'rounded-[var(--radius-md,11px)] text-left transition-colors focus:outline-none',
+    size === 'compact' ? 'h-[34px] px-2 text-[14px]' : 'h-[52px] px-4 text-[15px]',
+  );
   const fieldColors = 'bg-[color:var(--surface)] text-[color:var(--ink)] border border-[color:var(--border)] hover:border-[color:var(--accent)] focus:border-[color:var(--accent)]';
 
   if (!open) {
@@ -68,10 +72,10 @@ export default function CurrencyCombobox({ value, currencies, onSelect, placehol
         onChange={e => { setQuery(e.target.value); setActive(0); }}
         onKeyDown={onKey}
         placeholder="Search currency…"
-        className={cn(fieldBase, 'w-40 bg-[color:var(--surface)] text-[color:var(--ink)] border border-[color:var(--accent)] placeholder:text-[color:var(--ink-faint)]')}
+        className={cn(fieldBase, 'w-full bg-[color:var(--surface)] text-[color:var(--ink)] border border-[color:var(--accent)] placeholder:text-[color:var(--ink-faint)]')}
       />
       <div className="absolute z-50 mt-1 w-56 max-h-64 overflow-y-auto custom-scrollbar rounded-[var(--radius-md,11px)] shadow-2xl"
-           style={{ background: 'var(--surface)', border: '1px solid var(--border)', backdropFilter: 'blur(12px)' }}>
+        style={{ background: 'var(--surface)', border: '1px solid var(--border)', backdropFilter: 'blur(12px)' }}>
         {results.length === 0 ? (
           <div className="px-3 py-2 text-sm" style={{ color: 'var(--ink-faint)' }}>No match</div>
         ) : (

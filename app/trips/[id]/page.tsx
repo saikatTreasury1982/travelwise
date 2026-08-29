@@ -7,6 +7,7 @@ import { getForecast, getVariance, listAdhocExpenses } from '@/app/lib/services/
 import TopNav from '@/app/components/hub/TopNav';
 import TripDetail from '@/app/components/hub/TripDetail';
 import { getChecklistStats } from '@/app/lib/services/checklist-service';
+import { getConfirmedFlightCount } from '@/app/lib/services/flight-service';
 
 export default async function TripDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -32,22 +33,24 @@ export default async function TripDetailPage({ params }: { params: Promise<{ id:
     currency_symbol: c.currency_symbol == null ? null : String(c.currency_symbol),
   }));
 
-  const [forecast, variance, adhoc, checklist] = await Promise.all([
+  const [forecast, variance, adhoc, checklistStats, flightsConfirmed] = await Promise.all([
     getForecast(ctx, tripId),
     getVariance(ctx, tripId),
     listAdhocExpenses(ctx, tripId),
     getChecklistStats(ctx, tripId),
+    getConfirmedFlightCount(ctx, tripId),
   ]);
 
-    const hubStats = {
+  const hubStats = {
     baseCurrency: forecast.base_currency,
     adhocTotal: adhoc.filter((e) => e.is_active).reduce((s, e) => s + e.estimated_amount_base, 0),
     forecastTotal: forecast.total_base,
     variance: variance.variance,
     hasActuals: variance.actual_total > 0,
-    checklistTotal: checklist.total,
-    checklistDone: checklist.done,
-    checklistHighPending: checklist.highPending,
+    checklistTotal: checklistStats.total,
+    checklistDone: checklistStats.done,
+    checklistHighPending: checklistStats.highPending,
+    flightsConfirmed,
   };
 
   return (

@@ -190,6 +190,7 @@ export async function extractFlightBooking(
   }
 
   const result = normaliseResult(parsed);
+
   if (result.legs.length === 0) {
     result.extraction_failed = true;
     result.error_message = result.document_notes ?? 'No flight details were found in this document.';
@@ -197,3 +198,4 @@ export async function extractFlightBooking(
   }
   return enrichAirports(result);
 }
+
