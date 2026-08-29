@@ -95,6 +95,7 @@ export async function updateBooking(
   await scopedExecute(
     ctx,
     `UPDATE flight_bookings SET
+       status = 'confirmed',
        booking_source = ?, agency_reference = ?, airline_pnr = ?, booking_date = ?,
        total_paid = ?, base_fare = ?, currency_code = ?, notes = ?, updated_at = datetime('now')
      WHERE {{tenant}} AND trip_id = ? AND booking_id = ?`,
