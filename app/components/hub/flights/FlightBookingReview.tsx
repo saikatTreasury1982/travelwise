@@ -100,6 +100,22 @@ export default function FlightBookingReview({ tripId, bookingId, data, initialBe
     const save = async () => {
         setSaving(true); setError(null);
         try {
+            // Duplicate warning (dismissible, never blocks).
+            const dupRes = await fetch(`/api/trips/${tripId}/flights/check-duplicate`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ exclude_booking_id: bookingId ?? null, legs, bearer_traveler_ids: [...bearers] }),
+            });
+            if (dupRes.ok) {
+                const { warnings } = await dupRes.json();
+                if (warnings?.length) {
+                    const w = warnings[0];
+                    const proceed = confirm(
+                        `You already have a confirmed flight ${w.route} on ${w.date}` +
+                        `${w.booking_source ? ` (${w.booking_source})` : ''}.\n\nConfirm this one too?`,
+                    );
+                    if (!proceed) { setSaving(false); return; }
+                }
+            }
             const editing = bookingId != null;
             // Create: single POST with bearers → expense emits atomically.
             // Edit: PUT booking/legs, then PUT payers.

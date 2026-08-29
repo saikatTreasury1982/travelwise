@@ -210,6 +210,80 @@ export async function syncExpenseForBooking(ctx: TenantContext, tripId: number, 
   }
 }
 
+export interface DuplicateWarning {
+  booking_id: number;
+  route: string;      // "BNE → NRT"
+  date: string;       // "2025-07-19"
+  booking_source: string | null;
+}
+
+/**
+ * Find CONFIRMED bookings that clash with a candidate: same directional leg
+ * (departure→arrival, in order) on the same date, sharing ≥1 payer.
+ * Used to WARN (never block) before confirming. Returns [] if none.
+ *
+ * @param excludeBookingId  the booking being confirmed (don't match itself)
+ * @param candidateLegs     the legs about to be confirmed
+ * @param candidateBearers  the payers about to be assigned
+ */
+export async function findDuplicateConfirmed(
+  ctx: TenantContext, tripId: number,
+  excludeBookingId: number | null,
+  candidateLegs: { departure_airport_code?: string | null; arrival_airport_code?: string | null; departure_datetime?: string | null }[],
+  candidateBearers: number[],
+): Promise<DuplicateWarning[]> {
+  // Build the candidate's set of (from→to, date) keys.
+  const candKeys = new Set(
+    candidateLegs
+      .filter((l) => l.departure_airport_code && l.arrival_airport_code && l.departure_datetime)
+      .map((l) => `${l.departure_airport_code}>${l.arrival_airport_code}|${String(l.departure_datetime).slice(0, 10)}`),
+  );
+  if (candKeys.size === 0 || candidateBearers.length === 0) return [];
+
+  // All OTHER confirmed bookings on this trip, with legs + bearers.
+  const others = await scopedQuery(
+    ctx,
+    `SELECT booking_id, booking_source FROM flight_bookings
+     WHERE {{tenant}} AND trip_id = ? AND status = 'confirmed'
+       ${excludeBookingId != null ? 'AND booking_id != ?' : ''}`,
+    excludeBookingId != null ? [tripId, excludeBookingId] : [tripId],
+  );
+
+  const bearerSet = new Set(candidateBearers);
+  const warnings: DuplicateWarning[] = [];
+
+  for (const o of others) {
+    const bid = Number(o.booking_id);
+    // shared payer?
+    const bearers = await scopedQuery(
+      ctx, `SELECT traveler_id FROM flight_booking_bearers WHERE {{tenant}} AND booking_id = ?`, [bid],
+    );
+    const sharesPayer = bearers.some((b) => bearerSet.has(Number(b.traveler_id)));
+    if (!sharesPayer) continue;
+
+    // matching directional leg on same date?
+    const legs = await scopedQuery(
+      ctx,
+      `SELECT departure_airport_code, arrival_airport_code, departure_datetime
+       FROM flight_booking_legs WHERE {{tenant}} AND booking_id = ?`,
+      [bid],
+    );
+    for (const l of legs) {
+      const key = `${l.departure_airport_code}>${l.arrival_airport_code}|${String(l.departure_datetime ?? '').slice(0, 10)}`;
+      if (candKeys.has(key)) {
+        warnings.push({
+          booking_id: bid,
+          route: `${l.departure_airport_code} → ${l.arrival_airport_code}`,
+          date: String(l.departure_datetime ?? '').slice(0, 10),
+          booking_source: o.booking_source == null ? null : String(o.booking_source),
+        });
+        break; // one warning per clashing booking
+      }
+    }
+  }
+  return warnings;
+}
+
 /** A human label for the expense: "Flight · CCU → BKK" from the first/last leg. */
 async function bookingLabel(ctx: TenantContext, bookingId: number): Promise<string> {
   const legs = await scopedQuery(
@@ -292,4 +366,33 @@ export async function getConfirmedFlightCount(ctx: TenantContext, tripId: number
     [tripId],
   );
   return Number(rows[0]?.n ?? 0);
+}
+
+/**
+ * Move an AI/search option back from confirmed → shortlisted (Doors A/B only).
+ * Door C uploads (source='pdf') are real bookings and CANNOT be un-confirmed —
+ * they can only be edited or deleted. Removes the emitted expense via the reconciler.
+ * Returns false if the booking is a PDF upload or not found.
+ */
+export async function unconfirmBooking(ctx: TenantContext, tripId: number, bookingId: number): Promise<boolean> {
+  const rows = await scopedQuery(
+    ctx,
+    `SELECT source, status FROM flight_bookings WHERE {{tenant}} AND trip_id = ? AND booking_id = ? LIMIT 1`,
+    [tripId, bookingId],
+  );
+  const b = rows[0];
+  if (!b) return false;
+  // Door C (uploaded) bookings are terminal — no un-confirm.
+  if (String(b.source) === 'pdf') return false;
+  if (String(b.status) !== 'confirmed') return true; // already shortlisted, no-op
+
+  await scopedExecute(
+    ctx,
+    `UPDATE flight_bookings SET status = 'shortlisted', updated_at = datetime('now')
+     WHERE {{tenant}} AND trip_id = ? AND booking_id = ?`,
+    [tripId, bookingId],
+  );
+  // Reconciler removes the emitted expense (status no longer confirmed).
+  await syncExpenseForBooking(ctx, tripId, bookingId);
+  return true;
 }

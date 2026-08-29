@@ -103,6 +103,13 @@ export default function FlightBookingsView({ tripId, currencies }: Props) {
     loadBookings();
   }
 
+  async function unconfirm(id: number) {
+    if (!confirm('Move this flight back to shortlisted? It will be removed from your forecast until you confirm it again.')) return;
+    const res = await fetch(`/api/trips/${tripId}/flights/bookings/${id}/unconfirm`, { method: 'POST' });
+    if (res.ok) loadBookings();
+    else alert('This booking cannot be moved back to shortlisted.');
+  }
+
   if (editing) {
     return (
       <FlightBookingReview
@@ -254,13 +261,20 @@ export default function FlightBookingsView({ tripId, currencies }: Props) {
                       </span>
                     ))
                   )}
-                  <button onClick={() => openForEdit(b)} className="ml-auto text-[12px] font-semibold" style={{ color: 'var(--accent-deep)' }}>Edit booking →</button>
+                  <div className="ml-auto flex items-center gap-3">
+                    {b.source !== 'pdf' && (
+                      <button onClick={() => unconfirm(b.booking_id)} className="text-[12px]" style={{ color: 'var(--ink-soft)' }}>
+                        ↩ Move to shortlist
+                      </button>
+                    )}
+                    <button onClick={() => openForEdit(b)} className="text-[12px] font-semibold" style={{ color: 'var(--accent-deep)' }}>Edit booking →</button>
+                  </div>
                 </div>
               )}
             </div>
           );
         }
-        
+
         return (
           <>
             {/* CONFIRMED */}
