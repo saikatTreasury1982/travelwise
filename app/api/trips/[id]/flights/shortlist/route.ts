@@ -21,7 +21,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     ctx, tripId,
     {
       booking_source: opt.airline ?? 'AI suggestion',
-      total_paid: typeof opt.estimated_price === 'number' ? opt.estimated_price : null,
+      estimated_price: typeof opt.estimated_price === 'number' ? opt.estimated_price : null,  // estimate, not total_paid
+      total_paid: null,
       currency_code: opt.currency_code ?? null,
       notes: opt.label ?? null,
     },

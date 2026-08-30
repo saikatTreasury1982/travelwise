@@ -23,23 +23,26 @@ export interface BookingInput {
   booking_source?: string | null; agency_reference?: string | null; airline_pnr?: string | null;
   booking_date?: string | null; total_paid?: number | null; base_fare?: number | null;
   currency_code?: string | null; notes?: string | null; document_notes?: string | null;
+  estimated_price?: number | null;
 }
 
 /** Insert a booking + its legs. status defaults to 'confirmed' for Door C uploads. */
 export async function createBooking(
   ctx: TenantContext, tripId: number,
   booking: BookingInput, legs: LegInput[],
-  opts: { status?: 'shortlisted' | 'confirmed'; source?: string } = {},
+  opts: { status?: 'shortlisted' | 'confirmed'; source?: string; booking_confirmed?: number } = {},
 ): Promise<number> {
   await scopedInsert(ctx, 'flight_bookings', {
     trip_id: tripId,
     status: opts.status ?? 'confirmed',
     source: opts.source ?? 'pdf',
+    booking_confirmed: opts.booking_confirmed ?? 0,   // new
     booking_source: booking.booking_source ?? null,
     agency_reference: booking.agency_reference ?? null,
     airline_pnr: booking.airline_pnr ?? null,
     booking_date: booking.booking_date ?? null,
     total_paid: booking.total_paid ?? null,
+    estimated_price: booking.estimated_price ?? null,  // new
     base_fare: booking.base_fare ?? null,
     currency_code: booking.currency_code ?? null,
     notes: booking.notes ?? null,
@@ -170,7 +173,7 @@ async function findBookingExpenseId(ctx: TenantContext, tripId: number, bookingI
 export async function syncExpenseForBooking(ctx: TenantContext, tripId: number, bookingId: number): Promise<void> {
   const rows = await scopedQuery(
     ctx,
-    `SELECT status, total_paid, currency_code FROM flight_bookings
+    `SELECT status, total_paid, estimated_price, currency_code FROM flight_bookings
      WHERE {{tenant}} AND trip_id = ? AND booking_id = ? LIMIT 1`,
     [tripId, bookingId],
   );
@@ -179,7 +182,10 @@ export async function syncExpenseForBooking(ctx: TenantContext, tripId: number, 
 
   const existingId = await findBookingExpenseId(ctx, tripId, bookingId);
   const status = String(b.status);
-  const total = b.total_paid == null ? null : Number(b.total_paid);
+  // Forecast uses the REAL price if known (booked), else the ESTIMATE (planned).
+  const total = b.total_paid != null ? Number(b.total_paid)
+    : b.estimated_price != null ? Number(b.estimated_price)
+      : null;
   const currency = b.currency_code == null ? null : String(b.currency_code);
 
   const bearerRows = await scopedQuery(
@@ -334,6 +340,8 @@ export async function listBookings(ctx: TenantContext, tripId: number) {
       notes: b.notes == null ? null : String(b.notes),
       document_notes: b.document_notes == null ? null : String(b.document_notes),
       bearer_traveler_ids: bearers.map((r) => Number(r.traveler_id)),
+      booking_confirmed: Number(b.booking_confirmed ?? 0),
+      estimated_price: b.estimated_price == null ? null : Number(b.estimated_price),
       legs: legs.map((l) => ({
         leg_id: Number(l.leg_id),
         leg_order: Number(l.leg_order),
@@ -441,4 +449,45 @@ export async function checkFlightDateRange(
     suggestedStart: minLegDate < tripStart ? minLegDate : tripStart,
     suggestedEnd: maxLegDate > tripEnd ? maxLegDate : tripEnd,
   };
+}
+
+/**
+ * Mark a Planned flight as Booked: set the real total_paid + booking_confirmed=1,
+ * keep the original estimated_price. Re-syncs the forecast expense (now uses the
+ * real price via COALESCE). Also updates PNR/refs/legs if provided (from the doc).
+ */
+export async function markBookingBooked(
+  ctx: TenantContext, tripId: number, bookingId: number,
+  real: {
+    total_paid: number; currency_code?: string | null; airline_pnr?: string | null;
+    agency_reference?: string | null; booking_source?: string | null; booking_date?: string | null
+  },
+  legs?: LegInput[],
+): Promise<void> {
+  await scopedExecute(
+    ctx,
+    `UPDATE flight_bookings SET
+       booking_confirmed = 1,
+       total_paid = ?, currency_code = COALESCE(?, currency_code),
+       airline_pnr = COALESCE(?, airline_pnr),
+       agency_reference = COALESCE(?, agency_reference),
+       booking_source = COALESCE(?, booking_source),
+       booking_date = COALESCE(?, booking_date),
+       updated_at = datetime('now')
+     WHERE {{tenant}} AND trip_id = ? AND booking_id = ?`,
+    [
+      real.total_paid, real.currency_code ?? null, real.airline_pnr ?? null,
+      real.agency_reference ?? null, real.booking_source ?? null, real.booking_date ?? null,
+      tripId, bookingId,
+    ] as InValue[],
+  );
+
+  // Replace legs if the real doc provided them (real times/flight numbers).
+  if (legs && legs.length > 0) {
+    await scopedExecute(ctx, `DELETE FROM flight_booking_legs WHERE {{tenant}} AND booking_id = ?`, [bookingId]);
+    await insertLegs(ctx, bookingId, legs);
+  }
+
+  // Forecast now uses the real price (COALESCE(total_paid, estimated_price)).
+  await syncExpenseForBooking(ctx, tripId, bookingId);
 }

@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef } from 'react';
 import FlightBookingReview from './FlightBookingReview';
 import FlightSuggestPanel from './FlightSuggestPanel';
+import BookPlannedFlight from './BookPlannedFlight';
 
 interface Props { tripId: number; currencies: Currency[]; }
 interface Currency { currency_code: string; currency_name: string; currency_symbol?: string | null; }
@@ -39,6 +40,7 @@ export default function FlightBookingsView({ tripId, currencies }: Props) {
   const fileInput = useRef<HTMLInputElement>(null);
   const [suggestOpen, setSuggestOpen] = useState(false);
   const [sortKey, setSortKey] = useState<'price' | 'fastest' | 'earliest'>('price');
+  const [bookingPanelFor, setBookingPanelFor] = useState<number | null>(null);
 
   const loadRoster = async () => {
     const res = await fetch(`/api/trips/${tripId}/travelers`);
@@ -206,18 +208,24 @@ export default function FlightBookingsView({ tripId, currencies }: Props) {
                 <span className="text-[15px] font-bold" style={{ color: 'var(--ink)' }}>{b.booking_source || 'Booking'}</span>
                 {b.status === 'shortlisted' ? (
                   <span className="text-[11px] px-2 py-0.5 rounded-full" style={{ background: 'color-mix(in srgb, var(--ink) 8%, transparent)', color: 'var(--ink-soft)' }}>Shortlisted</span>
+                ) : b.booking_confirmed === 1 ? (
+                  <span className="text-[11px] px-2 py-0.5 rounded-full" style={{ background: 'color-mix(in srgb, var(--success) 16%, transparent)', color: 'var(--success)' }}>✓ Booked</span>
                 ) : (
-                  <span className="text-[11px] px-2 py-0.5 rounded-full" style={{ background: 'color-mix(in srgb, var(--success) 14%, transparent)', color: 'var(--success)' }}>Confirmed</span>
+                  <span className="text-[11px] px-2 py-0.5 rounded-full" style={{ background: 'color-mix(in srgb, var(--accent) 16%, transparent)', color: 'var(--accent-deep)' }}>Planned</span>
                 )}
                 {b.airline_pnr && <span className="text-[12px] font-mono" style={{ color: 'var(--ink-soft)' }}>{b.airline_pnr}</span>}
-                {b.total_paid != null ? (
-                  <span className="ml-auto text-[15px] font-extrabold" style={{ color: 'var(--accent-deep)' }}>
-                    {b.currency_code} {b.total_paid.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    {b.status === 'shortlisted' && <span className="text-[11px] font-normal ml-1" style={{ color: 'var(--ink-faint)' }}>est.</span>}
-                  </span>
-                ) : (
-                  <span className="ml-auto text-[13px]" style={{ color: 'var(--danger)' }}>Add price</span>
-                )}
+                {(() => {
+                  const isBooked = b.booking_confirmed === 1;
+                  const amount = isBooked ? b.total_paid : b.estimated_price;
+                  return amount != null ? (
+                    <span className="ml-auto text-[15px] font-extrabold" style={{ color: 'var(--accent-deep)' }}>
+                      {b.currency_code} {amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      {!isBooked && <span className="text-[11px] font-normal ml-1" style={{ color: 'var(--ink-faint)' }}>est.</span>}
+                    </span>
+                  ) : (
+                    <span className="ml-auto text-[13px]" style={{ color: 'var(--danger)' }}>Add price</span>
+                  );
+                })()}
                 <button onClick={() => deleteBooking(b.booking_id)} title="Delete booking" className="ml-3" style={{ color: 'var(--ink-faint)' }}>🗑</button>
               </div>
 
@@ -262,13 +270,34 @@ export default function FlightBookingsView({ tripId, currencies }: Props) {
                     ))
                   )}
                   <div className="ml-auto flex items-center gap-3">
-                    {b.source !== 'pdf' && (
+                    {b.booking_confirmed !== 1 && (
+                      <button onClick={() => setBookingPanelFor(bookingPanelFor === b.booking_id ? null : b.booking_id)}
+                        className="text-[12px] font-semibold" style={{ color: 'var(--success)' }}>
+                        ✈ I've booked this
+                      </button>
+                    )}
+                    {b.source !== 'pdf' && b.booking_confirmed !== 1 && (
                       <button onClick={() => unconfirm(b.booking_id)} className="text-[12px]" style={{ color: 'var(--ink-soft)' }}>
                         ↩ Move to shortlist
                       </button>
                     )}
                     <button onClick={() => openForEdit(b)} className="text-[12px] font-semibold" style={{ color: 'var(--accent-deep)' }}>Edit booking →</button>
                   </div>
+                </div>
+              )}
+
+              {/* Planned → Booked panel */}
+              {bookingPanelFor === b.booking_id && (
+                <div className="px-5 pb-4">
+                  <BookPlannedFlight
+                    tripId={tripId}
+                    bookingId={b.booking_id}
+                    currencies={currencies}
+                    estimatedPrice={b.estimated_price ?? null}
+                    currency={b.currency_code ?? null}
+                    onCancel={() => setBookingPanelFor(null)}
+                    onBooked={() => { setBookingPanelFor(null); loadBookings(); }}
+                  />
                 </div>
               )}
             </div>
