@@ -396,3 +396,49 @@ export async function unconfirmBooking(ctx: TenantContext, tripId: number, booki
   await syncExpenseForBooking(ctx, tripId, bookingId);
   return true;
 }
+
+export interface DateRangeCheck {
+  outOfRange: boolean;
+  tripStart: string;
+  tripEnd: string;
+  minLegDate: string | null;   // earliest leg date
+  maxLegDate: string | null;   // latest leg date
+  suggestedStart: string;      // trip start snapped to cover all legs
+  suggestedEnd: string;        // trip end snapped to cover all legs
+}
+
+/**
+ * Check whether any flight leg falls outside the trip's date range.
+ * Returns the suggested widened range (to cover all legs) for the align action.
+ */
+export async function checkFlightDateRange(
+  ctx: TenantContext, tripId: number,
+  legs: { departure_datetime?: string | null; arrival_datetime?: string | null }[],
+): Promise<DateRangeCheck | null> {
+  const rows = await scopedQuery(
+    ctx, `SELECT start_date, end_date FROM trips WHERE {{tenant}} AND trip_id = ? LIMIT 1`, [tripId],
+  );
+  const t = rows[0];
+  if (!t) return null;
+  const tripStart = String(t.start_date);
+  const tripEnd = String(t.end_date);
+
+  const dates = legs
+    .flatMap((l) => [l.departure_datetime, l.arrival_datetime])
+    .filter(Boolean)
+    .map((d) => String(d).slice(0, 10));
+  if (dates.length === 0) return null;
+
+  const minLegDate = dates.reduce((a, b) => (a < b ? a : b));
+  const maxLegDate = dates.reduce((a, b) => (a > b ? a : b));
+
+  const outOfRange = minLegDate < tripStart || maxLegDate > tripEnd;
+
+  return {
+    outOfRange,
+    tripStart, tripEnd,
+    minLegDate, maxLegDate,
+    suggestedStart: minLegDate < tripStart ? minLegDate : tripStart,
+    suggestedEnd: maxLegDate > tripEnd ? maxLegDate : tripEnd,
+  };
+}

@@ -100,13 +100,15 @@ export default function FlightBookingReview({ tripId, bookingId, data, initialBe
     const save = async () => {
         setSaving(true); setError(null);
         try {
-            // Duplicate warning (dismissible, never blocks).
+            // Pre-save checks: duplicate + date-range (both dismissible, never block).
             const dupRes = await fetch(`/api/trips/${tripId}/flights/check-duplicate`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ exclude_booking_id: bookingId ?? null, legs, bearer_traveler_ids: [...bearers] }),
             });
             if (dupRes.ok) {
-                const { warnings } = await dupRes.json();
+                const { warnings, dateRange } = await dupRes.json();
+
+                // 1. Duplicate warning.
                 if (warnings?.length) {
                     const w = warnings[0];
                     const proceed = confirm(
@@ -114,6 +116,23 @@ export default function FlightBookingReview({ tripId, bookingId, data, initialBe
                         `${w.booking_source ? ` (${w.booking_source})` : ''}.\n\nConfirm this one too?`,
                     );
                     if (!proceed) { setSaving(false); return; }
+                }
+
+                // 2. Date-range mismatch — offer to align the trip dates to the flight.
+                if (dateRange?.outOfRange) {
+                    const align = confirm(
+                        `This flight runs ${dateRange.minLegDate} to ${dateRange.maxLegDate}, ` +
+                        `but your trip is set to ${dateRange.tripStart} – ${dateRange.tripEnd}.\n\n` +
+                        `Update the trip dates to ${dateRange.suggestedStart} – ${dateRange.suggestedEnd} to match?\n\n` +
+                        `OK = update trip dates · Cancel = keep trip dates and save the flight anyway`,
+                    );
+                    if (align) {
+                        await fetch(`/api/trips/${tripId}`, {
+                            method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ startDate: dateRange.suggestedStart, endDate: dateRange.suggestedEnd }),
+                        });
+                    }
+                    // Either choice → continue and save the flight.
                 }
             }
             const editing = bookingId != null;
