@@ -38,6 +38,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
   const buffer = Buffer.from(await file.arrayBuffer());
   const result = await extractFlightBooking(buffer, mimeType);
-  // Extract-and-discard: the PDF is not stored. Return structured data only.
-  return NextResponse.json(result);
+
+  // If the upload matches a flight the user already planned, tell the client
+  // so it can offer to merge (mark that one booked) instead of creating a duplicate.
+  let plannedMatch = null;
+  if (!result.extraction_failed && Array.isArray(result.legs) && result.legs.length > 0) {
+    const { findPlannedMatch } = await import('@/app/lib/services/flight-service');
+    plannedMatch = await findPlannedMatch(ctx, tripId, result.legs);
+  }
+
+  return NextResponse.json({ ...result, plannedMatch });
 }

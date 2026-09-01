@@ -8,6 +8,8 @@ import type { TenantContext } from '@/app/lib/db/scoped';
 import { createExpense, updateExpense, deleteExpense } from '@/app/lib/services/expense-service';
 import type { InValue } from '@libsql/client';
 
+export interface FlightCounts { confirmed: number; shortlisted: number; }
+
 export interface LegInput {
   leg_order?: number;
   departure_airport_code?: string | null; departure_airport_name?: string | null; departure_city?: string | null;
@@ -290,6 +292,57 @@ export async function findDuplicateConfirmed(
   return warnings;
 }
 
+export interface PlannedMatch {
+  booking_id: number;
+  route: string;   // "BNE → NRT"
+  status: string;
+  booking_confirmed: number;
+}
+
+/**
+ * Find an existing NOT-yet-booked flight (shortlisted, or confirmed-but-not-booked)
+ * whose directional leg + date matches the candidate. Used by the top drop-zone to
+ * offer merging an uploaded real booking into a flight the user already planned,
+ * instead of creating a duplicate. Returns the first match, or null.
+ */
+export async function findPlannedMatch(
+  ctx: TenantContext, tripId: number,
+  candidateLegs: { departure_airport_code?: string | null; arrival_airport_code?: string | null; departure_datetime?: string | null }[],
+): Promise<PlannedMatch | null> {
+  const candKeys = new Set(
+    candidateLegs
+      .filter((l) => l.departure_airport_code && l.arrival_airport_code && l.departure_datetime)
+      .map((l) => `${l.departure_airport_code}>${l.arrival_airport_code}|${String(l.departure_datetime).slice(0, 10)}`),
+  );
+  if (candKeys.size === 0) return null;
+
+  const others = await scopedQuery(
+    ctx,
+    `SELECT booking_id, status, booking_confirmed FROM flight_bookings
+     WHERE {{tenant}} AND trip_id = ? AND booking_confirmed = 0`,  // not yet booked
+    [tripId],
+  );
+
+  for (const o of others) {
+    const bid = Number(o.booking_id);
+    const legs = await scopedQuery(
+      ctx,
+      `SELECT departure_airport_code, arrival_airport_code, departure_datetime
+       FROM flight_booking_legs WHERE {{tenant}} AND booking_id = ?`,
+      [bid],
+    );
+    for (const l of legs) {
+      const key = `${l.departure_airport_code}>${l.arrival_airport_code}|${String(l.departure_datetime ?? '').slice(0, 10)}`;
+      if (candKeys.has(key)) {
+        const from = legs[0]?.departure_airport_code ?? '?';
+        const to = legs[legs.length - 1]?.arrival_airport_code ?? '?';
+        return { booking_id: bid, route: `${from} → ${to}`, status: String(o.status), booking_confirmed: Number(o.booking_confirmed) };
+      }
+    }
+  }
+  return null;
+}
+
 /** A human label for the expense: "Flight · CCU → BKK" from the first/last leg. */
 async function bookingLabel(ctx: TenantContext, bookingId: number): Promise<string> {
   const legs = await scopedQuery(
@@ -309,10 +362,10 @@ async function bookingLabel(ctx: TenantContext, bookingId: number): Promise<stri
 export async function listBookings(ctx: TenantContext, tripId: number) {
   const bookings = await scopedQuery(
     ctx,
-    `SELECT booking_id, status, source, booking_source, agency_reference, airline_pnr,
-            booking_date, total_paid, base_fare, currency_code, notes, document_notes
-     FROM flight_bookings WHERE {{tenant}} AND trip_id = ?
-     ORDER BY booking_id DESC`,
+    `SELECT booking_id, status, source, booking_confirmed, booking_source, agency_reference, airline_pnr,
+      booking_date, total_paid, estimated_price, base_fare, currency_code, notes, document_notes
+      FROM flight_bookings WHERE {{tenant}} AND trip_id = ?
+      ORDER BY booking_id DESC`,
     [tripId],
   );
   const result = [];
@@ -335,13 +388,13 @@ export async function listBookings(ctx: TenantContext, tripId: number) {
       airline_pnr: b.airline_pnr == null ? null : String(b.airline_pnr),
       booking_date: b.booking_date == null ? null : String(b.booking_date),
       total_paid: b.total_paid == null ? null : Number(b.total_paid),
+      booking_confirmed: Number(b.booking_confirmed ?? 0),
+      estimated_price: b.estimated_price == null ? null : Number(b.estimated_price),
       base_fare: b.base_fare == null ? null : Number(b.base_fare),
       currency_code: b.currency_code == null ? null : String(b.currency_code),
       notes: b.notes == null ? null : String(b.notes),
       document_notes: b.document_notes == null ? null : String(b.document_notes),
       bearer_traveler_ids: bearers.map((r) => Number(r.traveler_id)),
-      booking_confirmed: Number(b.booking_confirmed ?? 0),
-      estimated_price: b.estimated_price == null ? null : Number(b.estimated_price),
       legs: legs.map((l) => ({
         leg_id: Number(l.leg_id),
         leg_order: Number(l.leg_order),
@@ -365,15 +418,20 @@ export async function listBookings(ctx: TenantContext, tripId: number) {
   return result;
 }
 
-/** Count of confirmed flight bookings for a trip (hub card stat). */
-export async function getConfirmedFlightCount(ctx: TenantContext, tripId: number): Promise<number> {
+/** Confirmed vs shortlisted flight booking counts for a trip (hub card stat). */
+export async function getFlightCounts(ctx: TenantContext, tripId: number): Promise<FlightCounts> {
   const rows = await scopedQuery(
     ctx,
-    `SELECT COUNT(*) AS n FROM flight_bookings
-     WHERE {{tenant}} AND trip_id = ? AND status = 'confirmed'`,
+    `SELECT status, COUNT(*) AS n FROM flight_bookings
+     WHERE {{tenant}} AND trip_id = ? GROUP BY status`,
     [tripId],
   );
-  return Number(rows[0]?.n ?? 0);
+  let confirmed = 0, shortlisted = 0;
+  for (const r of rows) {
+    if (String(r.status) === 'confirmed') confirmed = Number(r.n);
+    else if (String(r.status) === 'shortlisted') shortlisted = Number(r.n);
+  }
+  return { confirmed, shortlisted };
 }
 
 /**

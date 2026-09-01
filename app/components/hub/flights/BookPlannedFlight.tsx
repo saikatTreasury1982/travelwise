@@ -77,7 +77,7 @@ export default function BookPlannedFlight({ tripId, bookingId, currencies, estim
   return (
     <div className="rounded-xl p-4 mt-2" style={{ background: 'color-mix(in srgb, var(--accent) 5%, var(--surface))', border: '1px solid var(--accent)' }}>
       <div className="flex items-center justify-between mb-3">
-        <div className="text-[13px] font-semibold" style={{ color: 'var(--ink)' }}>Mark this flight as booked</div>
+                <div className="text-[13px] font-semibold" style={{ color: 'var(--ink)' }}>Confirm this flight's booking</div>
         <button onClick={onCancel} className="text-[12px]" style={{ color: 'var(--ink-soft)' }}>Cancel</button>
       </div>
 

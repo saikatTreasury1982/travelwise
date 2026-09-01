@@ -67,7 +67,7 @@ export default function FlightBookingsView({ tripId, currencies }: Props) {
         booking: {
           agency_reference: b.agency_reference, airline_pnr: b.airline_pnr,
           booking_source: b.booking_source, booking_date: b.booking_date,
-          total_paid: b.total_paid, base_fare: b.base_fare, currency_code: b.currency_code,
+          total_paid: b.total_paid ?? b.estimated_price, base_fare: b.base_fare, currency_code: b.currency_code,
         },
         legs: b.legs,
         uncertain_fields: [],
@@ -85,7 +85,23 @@ export default function FlightBookingsView({ tripId, currencies }: Props) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Could not read the document');
       if (data.extraction_failed) { setError(data.error_message || 'No flight details found in this document.'); return; }
-      setReviewData(data);
+
+      // Smart merge: if it matches a flight already planned, ask whether to merge —
+      // but ALWAYS open the review form so the user can verify/complete the data
+      // (e.g. a missing price the AI couldn't read). OK/Cancel only picks the save target.
+      let mergeIntoBookingId: number | null = null;
+      if (data.plannedMatch) {
+        const m = data.plannedMatch;
+        const merge = confirm(
+          `You already have this flight planned (${m.route}).\n\n` +
+          `OK = update that planned flight with this booking\n` +
+          `Cancel = save as a separate new booking`,
+        );
+        if (merge) mergeIntoBookingId = m.booking_id;
+      }
+
+      // Always show the review form; carry the merge target + mark this as a real booking.
+      setReviewData({ ...data, mergeIntoBookingId });
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Something went wrong');
     } finally {
@@ -124,8 +140,12 @@ export default function FlightBookingsView({ tripId, currencies }: Props) {
   if (reviewData) {
     return (
       <FlightBookingReview
-        tripId={tripId} data={reviewData} currencies={currencies}
-        onCancel={() => setReviewData(null)} onSaved={() => { setReviewData(null); loadBookings(); }}
+        tripId={tripId}
+        data={reviewData}
+        mergeIntoBookingId={reviewData.mergeIntoBookingId ?? null}
+        currencies={currencies}
+        onCancel={() => setReviewData(null)}
+        onSaved={() => { setReviewData(null); loadBookings(); }}
       />
     );
   }
@@ -273,7 +293,7 @@ export default function FlightBookingsView({ tripId, currencies }: Props) {
                     {b.booking_confirmed !== 1 && (
                       <button onClick={() => setBookingPanelFor(bookingPanelFor === b.booking_id ? null : b.booking_id)}
                         className="text-[12px] font-semibold" style={{ color: 'var(--success)' }}>
-                        ✈ I've booked this
+                        ✈ I've confirmed this
                       </button>
                     )}
                     {b.source !== 'pdf' && b.booking_confirmed !== 1 && (

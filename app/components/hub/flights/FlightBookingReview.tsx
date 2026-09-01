@@ -45,12 +45,13 @@ interface Props {
     bookingId?: number;
     data: ExtractionData;
     initialBearerIds?: number[];
+    mergeIntoBookingId?: number | null;
     currencies: { currency_code: string; currency_name: string; currency_symbol?: string | null }[];
     onSaved: () => void;
     onCancel: () => void;
 }
 
-export default function FlightBookingReview({ tripId, bookingId, data, initialBearerIds, currencies, onCancel, onSaved }: Props) {
+export default function FlightBookingReview({ tripId, bookingId, data, initialBearerIds, mergeIntoBookingId, currencies, onCancel, onSaved }: Props) {
     const [booking, setBooking] = useState<Booking>(data.booking);
     const [legs, setLegs] = useState<Leg[]>(data.legs);
     const [uncertain, setUncertain] = useState<Set<string>>(new Set(data.uncertain_fields));
@@ -100,10 +101,17 @@ export default function FlightBookingReview({ tripId, bookingId, data, initialBe
     const save = async () => {
         setSaving(true); setError(null);
         try {
+            const merging = mergeIntoBookingId != null;
+
             // Pre-save checks: duplicate + date-range (both dismissible, never block).
+            // When merging into a planned flight, exclude THAT booking so it isn't self-flagged.
             const dupRes = await fetch(`/api/trips/${tripId}/flights/check-duplicate`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ exclude_booking_id: bookingId ?? null, legs, bearer_traveler_ids: [...bearers] }),
+                body: JSON.stringify({
+                    exclude_booking_id: mergeIntoBookingId ?? bookingId ?? null,
+                    legs,
+                    bearer_traveler_ids: [...bearers],
+                }),
             });
             if (dupRes.ok) {
                 const { warnings, dateRange } = await dupRes.json();
@@ -132,12 +140,35 @@ export default function FlightBookingReview({ tripId, bookingId, data, initialBe
                             body: JSON.stringify({ startDate: dateRange.suggestedStart, endDate: dateRange.suggestedEnd }),
                         });
                     }
-                    // Either choice → continue and save the flight.
                 }
             }
+
+            // --- MERGE: mark the matched planned flight as Booked with this real data. ---
+            if (merging) {
+                // Make sure payers are set on the target (in case they weren't before).
+                await fetch(`/api/trips/${tripId}/flights/bookings/${mergeIntoBookingId}/travelers`, {
+                    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ traveler_ids: [...bearers] }),
+                });
+                const bookRes = await fetch(`/api/trips/${tripId}/flights/bookings/${mergeIntoBookingId}/book`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        total_paid: booking.total_paid,
+                        currency_code: booking.currency_code,
+                        airline_pnr: booking.airline_pnr,
+                        agency_reference: booking.agency_reference,
+                        booking_source: booking.booking_source,
+                        booking_date: booking.booking_date,
+                        legs,
+                    }),
+                });
+                if (!bookRes.ok) throw new Error((await bookRes.json().catch(() => ({}))).error || 'Could not mark as booked.');
+                onSaved();
+                return;
+            }
+
+            // --- CREATE or EDIT (existing behaviour). ---
             const editing = bookingId != null;
-            // Create: single POST with bearers → expense emits atomically.
-            // Edit: PUT booking/legs, then PUT payers.
             const res = await fetch(
                 editing ? `/api/trips/${tripId}/flights/bookings/${bookingId}` : `/api/trips/${tripId}/flights/bookings`,
                 {
@@ -153,7 +184,6 @@ export default function FlightBookingReview({ tripId, bookingId, data, initialBe
             if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Failed to save booking');
 
             if (editing) {
-                // ensure payers are synced on edit
                 await fetch(`/api/trips/${tripId}/flights/bookings/${bookingId}/travelers`, {
                     method: 'PUT', headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ traveler_ids: [...bearers] }),

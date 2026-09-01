@@ -7,7 +7,7 @@ import { getForecast, getVariance, listAdhocExpenses } from '@/app/lib/services/
 import TopNav from '@/app/components/hub/TopNav';
 import TripDetail from '@/app/components/hub/TripDetail';
 import { getChecklistStats } from '@/app/lib/services/checklist-service';
-import { getConfirmedFlightCount } from '@/app/lib/services/flight-service';
+import { getFlightCounts } from '@/app/lib/services/flight-service';
 
 export default async function TripDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -33,12 +33,12 @@ export default async function TripDetailPage({ params }: { params: Promise<{ id:
     currency_symbol: c.currency_symbol == null ? null : String(c.currency_symbol),
   }));
 
-  const [forecast, variance, adhoc, checklistStats, flightsConfirmed] = await Promise.all([
+  const [forecast, variance, adhoc, checklistStats, flightCounts] = await Promise.all([
     getForecast(ctx, tripId),
     getVariance(ctx, tripId),
     listAdhocExpenses(ctx, tripId),
     getChecklistStats(ctx, tripId),
-    getConfirmedFlightCount(ctx, tripId),
+    getFlightCounts(ctx, tripId),
   ]);
 
   const hubStats = {
@@ -50,7 +50,8 @@ export default async function TripDetailPage({ params }: { params: Promise<{ id:
     checklistTotal: checklistStats.total,
     checklistDone: checklistStats.done,
     checklistHighPending: checklistStats.highPending,
-    flightsConfirmed,
+    flightsConfirmed: flightCounts.confirmed,
+    flightsShortlisted: flightCounts.shortlisted,
   };
 
   return (
