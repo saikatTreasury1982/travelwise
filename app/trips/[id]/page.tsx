@@ -8,6 +8,7 @@ import TopNav from '@/app/components/hub/TopNav';
 import TripDetail from '@/app/components/hub/TripDetail';
 import { getChecklistStats } from '@/app/lib/services/checklist-service';
 import { getFlightCounts } from '@/app/lib/services/flight-service';
+import { getLodgingCounts } from '@/app/lib/services/lodging-service';
 
 export default async function TripDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -33,12 +34,13 @@ export default async function TripDetailPage({ params }: { params: Promise<{ id:
     currency_symbol: c.currency_symbol == null ? null : String(c.currency_symbol),
   }));
 
-  const [forecast, variance, adhoc, checklistStats, flightCounts] = await Promise.all([
+  const [forecast, variance, adhoc, checklistStats, flightCounts, lodgingCounts,] = await Promise.all([
     getForecast(ctx, tripId),
     getVariance(ctx, tripId),
     listAdhocExpenses(ctx, tripId),
     getChecklistStats(ctx, tripId),
     getFlightCounts(ctx, tripId),
+    getLodgingCounts(ctx, tripId),
   ]);
 
   const hubStats = {
@@ -52,6 +54,8 @@ export default async function TripDetailPage({ params }: { params: Promise<{ id:
     checklistHighPending: checklistStats.highPending,
     flightsConfirmed: flightCounts.confirmed,
     flightsShortlisted: flightCounts.shortlisted,
+    lodgingConfirmed: lodgingCounts.confirmed,
+    lodgingShortlisted: lodgingCounts.shortlisted,
   };
 
   return (

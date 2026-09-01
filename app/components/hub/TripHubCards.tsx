@@ -15,6 +15,8 @@ export interface HubStats {
   checklistHighPending: number;
   flightsConfirmed: number;
   flightsShortlisted: number;
+  lodgingConfirmed: number;
+  lodgingShortlisted: number;
 }
 
 function money(n: number, ccy: string) {
@@ -22,7 +24,20 @@ function money(n: number, ccy: string) {
 }
 
 export default function TripHubCards({ tripId, travelerCount, stats }: { tripId: number; travelerCount: number; stats: HubStats }) {
-  const { baseCurrency, adhocTotal, forecastTotal, variance, hasActuals, checklistTotal, checklistDone, checklistHighPending, flightsConfirmed, flightsShortlisted } = stats;
+  const {
+    baseCurrency,
+    adhocTotal,
+    forecastTotal,
+    variance,
+    hasActuals,
+    checklistTotal,
+    checklistDone,
+    checklistHighPending,
+    flightsConfirmed,
+    flightsShortlisted,
+    lodgingConfirmed,
+    lodgingShortlisted
+  } = stats;
 
   const MODULES: (ModuleCard & { stat: string; statColor?: string })[] = [
     {
@@ -35,7 +50,16 @@ export default function TripHubCards({ tripId, travelerCount, stats }: { tripId:
         ? `${flightsConfirmed} confirmed${flightsShortlisted > 0 ? ` · ${flightsShortlisted} shortlisted` : ''}`
         : 'Not started',
     },
-    { key: 'lodging', icon: '🏨', title: 'Lodging', hint: 'AI can suggest stays', stat: 'Not started' },
+    {
+      key: 'lodging', icon: '🏨', title: 'Lodging',
+      hint: lodgingConfirmed > 0
+        ? (lodgingShortlisted > 0 ? `${lodgingShortlisted} still being considered` : 'All stays confirmed')
+        : lodgingShortlisted > 0 ? 'Confirm one to add it to your forecast'
+          : 'Let AI suggest or upload a booking',
+      stat: (lodgingConfirmed > 0 || lodgingShortlisted > 0)
+        ? `${lodgingConfirmed} confirmed${lodgingShortlisted > 0 ? ` · ${lodgingShortlisted} shortlisted` : ''}`
+        : 'Not started',
+    },
     { key: 'itinerary', icon: '📅', title: 'Itinerary', hint: 'AI can generate a plan', stat: 'Not started' },
     {
       key: 'checklist', icon: '🧳', title: 'Checklist',
