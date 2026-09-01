@@ -66,6 +66,7 @@ export default function TopNav({ firstName, active = 'home' }: { firstName: stri
               <Link href="/profile" className="block px-4 py-2.5 text-sm" style={{ color: 'var(--ink)' }} onClick={() => setMenuOpen(false)}>Profile</Link>
               <Link href="/account" className="block px-4 py-2.5 text-sm" style={{ color: 'var(--ink)' }} onClick={() => setMenuOpen(false)}>Account</Link>
               <Link href="/settings" className="block px-4 py-2.5 text-sm" style={{ color: 'var(--ink)' }} onClick={() => setMenuOpen(false)}>Settings</Link>
+              <Link href="/help" className="block px-4 py-2.5 text-sm" style={{ color: 'var(--ink)' }} onClick={() => setMenuOpen(false)}>Help &amp; Support</Link>
               {isOwner && (
                 <>
                   <div className="h-px my-1" style={{ background: 'var(--divider)' }} />

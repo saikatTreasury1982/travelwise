@@ -200,3 +200,6 @@ button:not(:disabled) { cursor: pointer; }
 /* clickable leg block: faint tint on hover so it reads as editable */
 .tw-legs { transition: background .15s; }
 .tw-legs:hover { background: color-mix(in srgb, var(--accent) 4%, transparent); }
+
+.tw-card { transition: transform 0.1s; }
+.tw-card:hover > div { border-color: var(--accent); }

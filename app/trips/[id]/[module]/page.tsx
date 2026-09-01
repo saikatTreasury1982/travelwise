@@ -145,6 +145,9 @@ export default async function TripModulePage({ params }: { params: Promise<{ id:
             Back to {trip.trip_name}
           </Link>
           <h1 className="mb-2" style={{ fontFamily: 'var(--font-display)', fontSize: 'clamp(28px,4vw,38px)', color: 'var(--ink)' }}>Flights</h1>
+          <Link href="/help/flights" className="tw-link text-[13px] inline-flex items-center gap-1" style={{ color: 'var(--accent-deep)' }}>
+            How flights work →
+          </Link>
           <p className="text-[14px] mb-6" style={{ color: 'var(--ink-soft)' }}>Upload a booking and the co-pilot reads it in — flight search and AI suggestions are coming soon.</p>
           <FlightBookingsView tripId={tripId} currencies={currencies} />
         </div>
