@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 import FlightBookingReview from './FlightBookingReview';
 import FlightSuggestPanel from './FlightSuggestPanel';
 import BookPlannedFlight from './BookPlannedFlight';
+import VarianceChip from '@/app/components/ui/VarianceChip';
 
 interface Props { tripId: number; currencies: Currency[]; }
 interface Currency { currency_code: string; currency_name: string; currency_symbol?: string | null; }
@@ -246,11 +247,14 @@ export default function FlightBookingsView({ tripId, currencies }: Props) {
                     <span className="ml-auto text-[13px]" style={{ color: 'var(--danger)' }}>Add price</span>
                   );
                 })()}
-                <button onClick={() => deleteBooking(b.booking_id)} title="Delete booking" className="ml-3" style={{ color: 'var(--ink-faint)' }}>🗑</button>
+                {b.booking_confirmed === 1 && (
+                  <VarianceChip estimate={b.estimated_price} actual={b.total_paid} currency={b.currency_code} compact />
+                )}
+                <button onClick={() => deleteBooking(b.booking_id)} title="Delete booking" className="tw-link ml-3" style={{ color: 'var(--ink-faint)' }}>🗑</button>
               </div>
 
-              {/* legs */}
-              <button onClick={() => openForEdit(b)} className="w-full text-left px-5 py-3">
+              {/* legs — clickable to edit */}
+              <button onClick={() => openForEdit(b)} className="tw-legs w-full text-left px-5 py-3" style={{ cursor: 'pointer' }}>
                 {b.legs.map((l: any) => (
                   <div key={l.leg_id ?? `${l.departure_airport_code}-${l.leg_order}`} className="grid items-center gap-4 py-1.5" style={{ gridTemplateColumns: '60px 1fr auto' }}>
                     <span className="text-[13px] font-mono font-semibold" style={{ color: 'var(--accent-deep)' }}>{l.flight_number || '—'}</span>
@@ -271,8 +275,8 @@ export default function FlightBookingsView({ tripId, currencies }: Props) {
               {b.status === 'shortlisted' ? (
                 <div className="flex items-center gap-2 px-5 py-3" style={{ borderTop: '1px solid var(--divider)' }}>
                   <span className="text-[12px]" style={{ color: 'var(--ink-soft)' }}>Shortlisted — confirm to add it to your forecast.</span>
-                  <button onClick={() => openForEdit(b)} className="ml-auto text-[12px] font-semibold px-3.5 py-1.5 rounded-lg"
-                    style={{ background: 'var(--accent)', color: 'var(--accent-ink)', cursor: 'pointer' }}>
+                  <button onClick={() => openForEdit(b)} className="tw-btn ml-auto text-[12px] font-semibold px-3.5 py-1.5 rounded-lg"
+                    style={{ background: 'var(--accent)', color: 'var(--accent-ink)' }}>
                     Confirm this flight →
                   </button>
                 </div>
@@ -292,16 +296,16 @@ export default function FlightBookingsView({ tripId, currencies }: Props) {
                   <div className="ml-auto flex items-center gap-3">
                     {b.booking_confirmed !== 1 && (
                       <button onClick={() => setBookingPanelFor(bookingPanelFor === b.booking_id ? null : b.booking_id)}
-                        className="text-[12px] font-semibold" style={{ color: 'var(--success)' }}>
+                        className="tw-link text-[12px] font-semibold" style={{ color: 'var(--success)' }}>
                         ✈ I've confirmed this
                       </button>
                     )}
                     {b.source !== 'pdf' && b.booking_confirmed !== 1 && (
-                      <button onClick={() => unconfirm(b.booking_id)} className="text-[12px]" style={{ color: 'var(--ink-soft)' }}>
+                      <button onClick={() => unconfirm(b.booking_id)} className="tw-link text-[12px]" style={{ color: 'var(--ink-soft)' }}>
                         ↩ Move to shortlist
                       </button>
                     )}
-                    <button onClick={() => openForEdit(b)} className="text-[12px] font-semibold" style={{ color: 'var(--accent-deep)' }}>Edit booking →</button>
+                    <button onClick={() => openForEdit(b)} className="tw-link text-[12px] font-semibold" style={{ color: 'var(--accent-deep)' }}>Edit booking →</button>
                   </div>
                 </div>
               )}

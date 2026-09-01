@@ -549,3 +549,30 @@ export async function markBookingBooked(
   // Forecast now uses the real price (COALESCE(total_paid, estimated_price)).
   await syncExpenseForBooking(ctx, tripId, bookingId);
 }
+
+export interface FlightPlanningVariance {
+  currency: string;         // trip base (from first booked flight; refine later)
+  total_estimated: number;
+  total_paid: number;
+  delta: number;            // paid − estimated (negative = came in under)
+  booked_count: number;
+}
+
+/** Planning accuracy across BOOKED flights: sum of (paid − estimated). Tenant-scoped. */
+export async function getFlightPlanningVariance(ctx: TenantContext, tripId: number): Promise<FlightPlanningVariance> {
+  const rows = await scopedQuery(
+    ctx,
+    `SELECT estimated_price, total_paid, currency_code
+     FROM flight_bookings
+     WHERE {{tenant}} AND trip_id = ? AND booking_confirmed = 1
+       AND estimated_price IS NOT NULL AND total_paid IS NOT NULL`,
+    [tripId],
+  );
+  let est = 0, paid = 0, currency = '';
+  for (const r of rows) {
+    est += Number(r.estimated_price);
+    paid += Number(r.total_paid);
+    if (!currency && r.currency_code) currency = String(r.currency_code);
+  }
+  return { currency, total_estimated: est, total_paid: paid, delta: paid - est, booked_count: rows.length };
+}

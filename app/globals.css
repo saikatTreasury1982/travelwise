@@ -184,3 +184,19 @@ body {
   color: var(--ink-faint);
   opacity: 1;
 }
+
+/* every enabled button shows a pointer */
+button:not(:disabled) { cursor: pointer; }
+
+/* text-style action buttons: subtle fade + underline on hover */
+.tw-link { transition: opacity .15s; }
+.tw-link:hover { opacity: 0.65; text-decoration: underline; text-underline-offset: 3px; }
+
+/* solid buttons: slight darken + press */
+.tw-btn { transition: filter .15s, transform .05s; }
+.tw-btn:hover { filter: brightness(0.94); }
+.tw-btn:active { transform: translateY(1px); }
+
+/* clickable leg block: faint tint on hover so it reads as editable */
+.tw-legs { transition: background .15s; }
+.tw-legs:hover { background: color-mix(in srgb, var(--accent) 4%, transparent); }
