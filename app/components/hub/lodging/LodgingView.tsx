@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
+import CurrencyCombobox from '@/app/components/ui/CurrencyCombobox';
 import LodgingSuggestPanel from './LodgingSuggestPanel';
 
 interface Currency { currency_code: string; currency_name: string; currency_symbol?: string | null; }
@@ -251,15 +252,23 @@ function MarkBooked({ tripId, stay, currencies, onDone, onCancel }: any) {
     } finally { setBusy(false); }
   }
   return <Modal title={`Mark booked — ${stay?.name ?? 'stay'}`} onCancel={onCancel}>
-    <div className="flex gap-2 items-end mb-3 flex-wrap">
-      <label className="text-[12px]" style={{ color: 'var(--ink-faint)' }}>Currency
-        <select value={curr} onChange={(e) => setCurr(e.target.value)} className="block mt-1 p-2 rounded-lg text-[14px]" style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--ink)', width: 90 }}>
-          <option value="">—</option>{currencies.map((c: any) => <option key={c.currency_code} value={c.currency_code}>{c.currency_code}</option>)}
-        </select></label>
+    <div className="flex gap-2 items-end mb-4 flex-wrap">
       <label className="text-[12px]" style={{ color: 'var(--ink-faint)' }}>Real price paid
-        <input type="number" value={price} onChange={(e) => setPrice(e.target.value)} className="block mt-1 p-2 rounded-lg text-[14px]" style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--ink)', width: 130 }} /></label>
+        <div className="flex gap-1 items-stretch mt-1">
+          <div className="w-20 [&>button]:!h-[40px] [&>button]:!px-3 [&>button]:!py-0 [&>button]:!text-[14px] [&>button]:!rounded-lg [&_input]:!h-[40px]">
+            <CurrencyCombobox
+              value={curr}
+              currencies={currencies}
+              onSelect={setCurr}
+            />
+          </div>
+          <input type="number" value={price} onChange={(e) => setPrice(e.target.value)}
+            className="p-2 rounded-lg text-[14px]"
+            style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--ink)', width: 130, height: 40 }} />
+        </div>
+      </label>
       <label className="text-[12px] flex-1" style={{ color: 'var(--ink-faint)' }}>Reference (optional)
-        <input value={ref} onChange={(e) => setRef(e.target.value)} className="block mt-1 p-2 rounded-lg text-[14px] w-full" style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--ink)' }} /></label>
+        <input value={ref} onChange={(e) => setRef(e.target.value)} className="mt-1 p-2 rounded-lg text-[14px] w-full" style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--ink)', height: 40 }} /></label>
     </div>
     <div className="flex justify-end gap-2">
       <button onClick={onCancel} className="tw-link text-[14px] px-4 py-2" style={{ color: 'var(--ink-soft)' }}>Cancel</button>
