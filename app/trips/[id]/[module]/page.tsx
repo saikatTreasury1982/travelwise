@@ -12,6 +12,7 @@ import ActualsView from '@/app/components/hub/ActualsView';
 import { listChecklist } from '@/app/lib/services/checklist-service';
 import ChecklistView from '@/app/components/hub/ChecklistView';
 import FlightBookingsView from '@/app/components/hub/flights/FlightBookingsView';
+import LodgingView from '@/app/components/hub/lodging/LodgingView';
 
 export const dynamic = 'force-dynamic';
 
@@ -134,7 +135,7 @@ export default async function TripModulePage({ params }: { params: Promise<{ id:
     );
   }
 
-  // Real module: Flights (Door C — upload booking; Doors A/B coming soon)
+  // Real module: Flights 
   if (module === 'flights') {
     return (
       <div style={{ background: 'var(--canvas)', minHeight: '100vh' }}>
@@ -150,6 +151,26 @@ export default async function TripModulePage({ params }: { params: Promise<{ id:
           </Link>
           <p className="text-[14px] mb-6" style={{ color: 'var(--ink-soft)' }}>Upload a booking and the co-pilot reads it in — flight search and AI suggestions are coming soon.</p>
           <FlightBookingsView tripId={tripId} currencies={currencies} />
+        </div>
+      </div>
+    );
+  }
+
+  // Real module: Lodging 
+  if (module === 'lodging') {
+    return (
+      <div style={{ background: 'var(--canvas)', minHeight: '100vh' }}>
+        <TopNav firstName={firstName} active="trips" />
+        <div className="px-6 md:px-10 py-8 max-w-[900px] mx-auto">
+          <Link href={`/trips/${tripId}`} className="tw-link text-[13px] font-medium inline-flex items-center gap-1.5 mb-6" style={{ color: 'var(--ink-soft)' }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
+            Back to {trip.trip_name}
+          </Link>
+          <h1 className="mb-2" style={{ fontFamily: 'var(--font-display)', fontSize: 'clamp(28px,4vw,38px)', color: 'var(--ink)' }}>Lodging</h1>
+          <p className="text-[14px] mb-6" style={{ color: 'var(--ink-soft)' }}>Find places to stay — the co-pilot suggests options, you shortlist, confirm, then book.</p>
+          <LodgingView tripId={tripId} currencies={currencies}
+            destinations={trip.destinations.map((d) => ({ destination_id: d.destination_id, city: d.city, country: d.country }))}
+            tripStart={trip.start_date} tripEnd={trip.end_date} />
         </div>
       </div>
     );
