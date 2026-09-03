@@ -5,7 +5,8 @@
 // assigned cost-sharer bearers. Idempotent per ADR-010 Decision 1a.
 import { scopedQuery, scopedExecute, scopedInsert } from '@/app/lib/db/scoped';
 import type { TenantContext } from '@/app/lib/db/scoped';
-import { createExpense, updateExpense, deleteExpense } from '@/app/lib/services/expense-service';
+import { createExpense, updateExpense, deleteExpense, getTripBaseCurrency } from '@/app/lib/services/expense-service';
+import { convert } from '@/app/lib/services/fx';
 import type { InValue } from '@libsql/client';
 
 export interface FlightCounts { confirmed: number; shortlisted: number; }
@@ -97,23 +98,35 @@ export async function updateBooking(
   ctx: TenantContext, tripId: number, bookingId: number,
   booking: BookingInput, legs: LegInput[],
 ): Promise<void> {
+  const currency = booking.currency_code ?? null;
+  const base = await getTripBaseCurrency(ctx, tripId);
+
+  let baseAmount: number | null = null;
+  let fxRate: number | null = null;
+  let fxSource: 'auto' | null = null;
+  if (booking.total_paid != null && currency && base) {
+    const { rate, baseAmount: ba } = await convert(booking.total_paid, currency, base);
+    baseAmount = ba; fxRate = rate; fxSource = 'auto';
+  }
+
   await scopedExecute(
     ctx,
     `UPDATE flight_bookings SET
        status = 'confirmed',
        booking_source = ?, agency_reference = ?, airline_pnr = ?, booking_date = ?,
-       total_paid = ?, base_fare = ?, currency_code = ?, notes = ?, updated_at = datetime('now')
+       total_paid = ?, base_fare = ?, currency_code = ?,
+       fx_rate_to_base = ?, total_paid_base = ?, fx_source = COALESCE(?, fx_source),
+       notes = ?, updated_at = datetime('now')
      WHERE {{tenant}} AND trip_id = ? AND booking_id = ?`,
     [
       booking.booking_source ?? null, booking.agency_reference ?? null, booking.airline_pnr ?? null,
       booking.booking_date ?? null, booking.total_paid ?? null, booking.base_fare ?? null,
-      booking.currency_code ?? null, booking.notes ?? null, tripId, bookingId,
+      currency, fxRate, baseAmount, fxSource, booking.notes ?? null, tripId, bookingId,
     ] as InValue[],
   );
   await scopedExecute(ctx, `DELETE FROM flight_booking_legs WHERE {{tenant}} AND booking_id = ?`, [bookingId]);
   await insertLegs(ctx, bookingId, legs);
 
-  // If confirmed, keep the emitted expense in sync with the new total/currency.
   await syncExpenseForBooking(ctx, tripId, bookingId);
 }
 
@@ -175,7 +188,7 @@ async function findBookingExpenseId(ctx: TenantContext, tripId: number, bookingI
 export async function syncExpenseForBooking(ctx: TenantContext, tripId: number, bookingId: number): Promise<void> {
   const rows = await scopedQuery(
     ctx,
-    `SELECT status, total_paid, estimated_price, currency_code FROM flight_bookings
+    `SELECT status, total_paid, estimated_price, total_paid_base, fx_rate_to_base, currency_code FROM flight_bookings
      WHERE {{tenant}} AND trip_id = ? AND booking_id = ? LIMIT 1`,
     [tripId, bookingId],
   );
@@ -184,11 +197,16 @@ export async function syncExpenseForBooking(ctx: TenantContext, tripId: number, 
 
   const existingId = await findBookingExpenseId(ctx, tripId, bookingId);
   const status = String(b.status);
-  // Forecast uses the REAL price if known (booked), else the ESTIMATE (planned).
   const total = b.total_paid != null ? Number(b.total_paid)
     : b.estimated_price != null ? Number(b.estimated_price)
       : null;
   const currency = b.currency_code == null ? null : String(b.currency_code);
+
+  // When booked with a stored base (mode B/C), hand it to the expense so the
+  // forecast uses the real landed cost — especially a user-pinned rate (mode C).
+  const usingRealPaid = b.total_paid != null;
+  const baseOverride = usingRealPaid && b.total_paid_base != null ? Number(b.total_paid_base) : null;
+  const rateOverride = usingRealPaid && b.fx_rate_to_base != null ? Number(b.fx_rate_to_base) : null;
 
   const bearerRows = await scopedQuery(
     ctx, `SELECT traveler_id FROM flight_booking_bearers WHERE {{tenant}} AND booking_id = ?`, [bookingId],
@@ -209,11 +227,13 @@ export async function syncExpenseForBooking(ctx: TenantContext, tripId: number, 
       tripId, sourceModule: 'flight', sourceId: bookingId,
       description, estimatedAmount: total!, currency: currency!,
       categoryLabel: 'Flights', bearerTravelerIds: bearerIds, isActive: true,
+      baseAmountOverride: baseOverride, fxRateOverride: rateOverride,
     });
   } else {
     await updateExpense(ctx, tripId, existingId, {
       description, estimatedAmount: total!, currency: currency!,
       categoryLabel: 'Flights', bearerTravelerIds: bearerIds, isActive: true,
+      baseAmountOverride: baseOverride, fxRateOverride: rateOverride,
     });
   }
 }
@@ -517,16 +537,38 @@ export async function checkFlightDateRange(
 export async function markBookingBooked(
   ctx: TenantContext, tripId: number, bookingId: number,
   real: {
-    total_paid: number; currency_code?: string | null; airline_pnr?: string | null;
-    agency_reference?: string | null; booking_source?: string | null; booking_date?: string | null
+    total_paid: number; currency_code?: string | null; total_paid_base?: number | null;
+    airline_pnr?: string | null; agency_reference?: string | null;
+    booking_source?: string | null; booking_date?: string | null
   },
   legs?: LegInput[],
 ): Promise<void> {
+  const currency = real.currency_code ?? null;
+  const base = await getTripBaseCurrency(ctx, tripId);
+
+  let baseAmount: number | null = null;
+  let fxRate: number | null = null;
+  let fxSource: 'auto' | 'manual' | null = null;
+
+  if (real.total_paid_base != null && currency && base) {
+    // Mode C — user gave both amounts; rate is implicit, no lookup.
+    baseAmount = real.total_paid_base;
+    fxRate = real.total_paid > 0 ? real.total_paid_base / real.total_paid : null;
+    fxSource = 'manual';
+  } else if (currency && base) {
+    // Mode B — mid-market auto-convert.
+    const { rate, baseAmount: ba } = await convert(real.total_paid, currency, base);
+    baseAmount = ba;
+    fxRate = rate;
+    fxSource = 'auto';
+  }
+
   await scopedExecute(
     ctx,
     `UPDATE flight_bookings SET
        booking_confirmed = 1,
        total_paid = ?, currency_code = COALESCE(?, currency_code),
+       fx_rate_to_base = ?, total_paid_base = ?, fx_source = ?,
        airline_pnr = COALESCE(?, airline_pnr),
        agency_reference = COALESCE(?, agency_reference),
        booking_source = COALESCE(?, booking_source),
@@ -534,19 +576,19 @@ export async function markBookingBooked(
        updated_at = datetime('now')
      WHERE {{tenant}} AND trip_id = ? AND booking_id = ?`,
     [
-      real.total_paid, real.currency_code ?? null, real.airline_pnr ?? null,
-      real.agency_reference ?? null, real.booking_source ?? null, real.booking_date ?? null,
+      real.total_paid, currency, fxRate, baseAmount, fxSource,
+      real.airline_pnr ?? null, real.agency_reference ?? null,
+      real.booking_source ?? null, real.booking_date ?? null,
       tripId, bookingId,
     ] as InValue[],
   );
 
-  // Replace legs if the real doc provided them (real times/flight numbers).
+  // Replace legs if the real doc provided them.
   if (legs && legs.length > 0) {
     await scopedExecute(ctx, `DELETE FROM flight_booking_legs WHERE {{tenant}} AND booking_id = ?`, [bookingId]);
     await insertLegs(ctx, bookingId, legs);
   }
 
-  // Forecast now uses the real price (COALESCE(total_paid, estimated_price)).
   await syncExpenseForBooking(ctx, tripId, bookingId);
 }
 

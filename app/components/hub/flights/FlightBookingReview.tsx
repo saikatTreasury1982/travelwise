@@ -47,11 +47,12 @@ interface Props {
     initialBearerIds?: number[];
     mergeIntoBookingId?: number | null;
     currencies: { currency_code: string; currency_name: string; currency_symbol?: string | null }[];
+    baseCurrency: string;
     onSaved: () => void;
     onCancel: () => void;
 }
 
-export default function FlightBookingReview({ tripId, bookingId, data, initialBearerIds, mergeIntoBookingId, currencies, onCancel, onSaved }: Props) {
+export default function FlightBookingReview({ tripId, bookingId, data, initialBearerIds, mergeIntoBookingId, currencies, baseCurrency, onCancel, onSaved }: Props) {
     const [booking, setBooking] = useState<Booking>(data.booking);
     const [legs, setLegs] = useState<Leg[]>(data.legs);
     const [uncertain, setUncertain] = useState<Set<string>>(new Set(data.uncertain_fields));
@@ -61,6 +62,24 @@ export default function FlightBookingReview({ tripId, bookingId, data, initialBe
     // payer picker (mandatory) — cost-sharers only
     const [roster, setRoster] = useState<Traveler[]>([]);
     const [bearers, setBearers] = useState<Set<number>>(new Set(initialBearerIds ?? []));
+    // FX preview / override (mode B live preview, mode C pin exact base)
+    const [rate, setRate] = useState<number | null>(null);
+    const [pinBase, setPinBase] = useState(false);
+    const [baseAmt, setBaseAmt] = useState('');
+    const curr = booking.currency_code ?? '';
+    const foreign = !!curr && !!baseCurrency && curr !== baseCurrency;
+
+    useEffect(() => {
+        if (!foreign) { setRate(null); return; }
+        let live = true;
+        fetch(`/api/fx?from=${encodeURIComponent(curr)}&to=${encodeURIComponent(baseCurrency)}`)
+            .then((r) => r.ok ? r.json() : { rate: null })
+            .then((d) => { if (live) setRate(d.rate ?? null); })
+            .catch(() => { if (live) setRate(null); });
+        return () => { live = false; };
+    }, [curr, baseCurrency, foreign]);
+
+    const autoBase = foreign && rate != null && booking.total_paid != null ? booking.total_paid * rate : null;
 
     useEffect(() => {
         (async () => {
@@ -155,6 +174,7 @@ export default function FlightBookingReview({ tripId, bookingId, data, initialBe
                     body: JSON.stringify({
                         total_paid: booking.total_paid,
                         currency_code: booking.currency_code,
+                        total_paid_base: (foreign && pinBase && baseAmt) ? parseFloat(baseAmt) : null,
                         airline_pnr: booking.airline_pnr,
                         agency_reference: booking.agency_reference,
                         booking_source: booking.booking_source,
@@ -238,6 +258,34 @@ export default function FlightBookingReview({ tripId, bookingId, data, initialBe
                     </div>
                 </Field>
             </div>
+            
+            {/* FX preview + pin-exact toggle (only when the paid currency ≠ base) */}
+            {foreign && (
+                <div className="mb-6 rounded-lg px-3 py-2.5 text-[12px]"
+                    style={{ background: 'color-mix(in srgb, var(--accent) 6%, var(--surface))', border: '1px solid var(--border)' }}>
+                    {!pinBase ? (
+                        <div className="flex items-center gap-2 flex-wrap">
+                            <span style={{ color: 'var(--ink-soft)' }}>
+                                {autoBase != null
+                                    ? <>≈ <strong style={{ color: 'var(--ink)' }}>{baseCurrency} {autoBase.toLocaleString(undefined, { maximumFractionDigits: 0 })}</strong> in your forecast <span style={{ color: 'var(--ink-faint)' }}>(mid-market)</span></>
+                                    : rate == null ? 'Rate unavailable — will convert on save.' : 'Enter an amount to preview.'}
+                            </span>
+                            <button type="button" onClick={() => setPinBase(true)} className="tw-link ml-auto" style={{ color: 'var(--accent-deep)' }}>
+                                Enter exact {baseCurrency} charged →
+                            </button>
+                        </div>
+                    ) : (
+                        <div className="flex items-center gap-2 flex-wrap">
+                            <span style={{ color: 'var(--ink-soft)' }}>Exact {baseCurrency} on your statement</span>
+                            <input type="number" value={baseAmt} onChange={(e) => setBaseAmt(e.target.value)} placeholder={baseCurrency}
+                                style={{ ...inputStyle(false), width: 130, height: 32 }} />
+                            <button type="button" onClick={() => { setPinBase(false); setBaseAmt(''); }} className="tw-link ml-auto" style={{ color: 'var(--ink-faint)' }}>
+                                Use mid-market instead
+                            </button>
+                        </div>
+                    )}
+                </div>
+            )}
 
             {/* Legs table */}
             <div className="overflow-x-auto">

@@ -39,6 +39,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const baseCurrency = await getTripBaseCurrency(ctx, tripId);
 
   const dests = trip.destinations.map((d) => `${d.city ? d.city + ', ' : ''}${d.country}`);
+  const destinationCities = trip.destinations
+    .map((d) => d.city)
+    .filter((c): c is string => !!c);
+  const destinationsHint = destinationCities.join(', ');
   const nights = (() => {
     try {
       const a = new Date(trip.start_date + 'T00:00:00').getTime();
@@ -64,7 +68,7 @@ Travellers: ${trip.travelers.filter((t) => t.is_active).length}.`;
       const response = await anthropic.messages.create({
         model: MODEL,
         max_tokens: 3000,
-        system: lodgingSystemPrompt({ homeCurrency: baseCurrency, routeHint, budgetHint }),
+        system: lodgingSystemPrompt({ homeCurrency: baseCurrency, routeHint, budgetHint, destinationsHint }),
         tools: [SUGGEST_STAY_TOOL],
         messages: convo,
       });

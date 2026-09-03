@@ -30,6 +30,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const amount = Number(body.estimatedAmount);
   const currency = typeof body.currency === 'string' ? body.currency : '';
   const bearers = Array.isArray(body.bearerTravelerIds) ? body.bearerTravelerIds.map(Number).filter(Number.isFinite) : [];
+  const baseAmountOverride = body.baseAmountOverride != null && Number.isFinite(Number(body.baseAmountOverride))
+    ? Number(body.baseAmountOverride) : null;
 
   if (!description) return NextResponse.json({ error: 'Expense name is required.' }, { status: 400 });
   if (!Number.isFinite(amount) || amount <= 0) return NextResponse.json({ error: 'A valid amount is required.' }, { status: 400 });
@@ -44,6 +46,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     expenseDate: typeof body.expenseDate === 'string' && body.expenseDate ? body.expenseDate : null,
     isActive: body.isActive !== false,
     notes: typeof body.notes === 'string' ? body.notes : null,
+    baseAmountOverride,
   });
 
   await writeAudit({ event: 'trip.update', result: 'success', tenantId: ctx.tenantId, userId: ctx.userId, detail: { tripId, action: 'adhoc.add', description } });

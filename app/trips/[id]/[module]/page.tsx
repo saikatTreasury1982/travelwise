@@ -137,6 +137,7 @@ export default async function TripModulePage({ params }: { params: Promise<{ id:
 
   // Real module: Flights 
   if (module === 'flights') {
+    const baseCurrency = await getTripBaseCurrency(ctx, tripId);
     return (
       <div style={{ background: 'var(--canvas)', minHeight: '100vh' }}>
         <TopNav firstName={firstName} active="trips" />
@@ -150,7 +151,7 @@ export default async function TripModulePage({ params }: { params: Promise<{ id:
             How flights work →
           </Link>
           <p className="text-[14px] mb-6" style={{ color: 'var(--ink-soft)' }}>Upload a booking and the co-pilot reads it in — flight search and AI suggestions are coming soon.</p>
-          <FlightBookingsView tripId={tripId} currencies={currencies} />
+          <FlightBookingsView tripId={tripId} currencies={currencies} baseCurrency={baseCurrency} />
         </div>
       </div>
     );
@@ -158,6 +159,7 @@ export default async function TripModulePage({ params }: { params: Promise<{ id:
 
   // Real module: Lodging 
   if (module === 'lodging') {
+    const baseCurrency = await getTripBaseCurrency(ctx, tripId);
     return (
       <div style={{ background: 'var(--canvas)', minHeight: '100vh' }}>
         <TopNav firstName={firstName} active="trips" />
@@ -168,7 +170,7 @@ export default async function TripModulePage({ params }: { params: Promise<{ id:
           </Link>
           <h1 className="mb-2" style={{ fontFamily: 'var(--font-display)', fontSize: 'clamp(28px,4vw,38px)', color: 'var(--ink)' }}>Lodging</h1>
           <p className="text-[14px] mb-6" style={{ color: 'var(--ink-soft)' }}>Find places to stay — the co-pilot suggests options, you shortlist, confirm, then book.</p>
-          <LodgingView tripId={tripId} currencies={currencies}
+          <LodgingView tripId={tripId} currencies={currencies} baseCurrency={baseCurrency}
             destinations={trip.destinations.map((d) => ({ destination_id: d.destination_id, city: d.city, country: d.country }))}
             tripStart={trip.start_date} tripEnd={trip.end_date} />
         </div>

@@ -2,6 +2,7 @@
 import { NextResponse } from 'next/server';
 import { getUserContext } from '@/app/lib/auth/context';
 import { createStay } from '@/app/lib/services/lodging-service';
+import { scopedQuery } from '@/app/lib/db/scoped';
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const ctx = await getUserContext();
@@ -13,11 +14,27 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   let opt: any;
   try { opt = await request.json(); } catch { return NextResponse.json({ error: 'Invalid body' }, { status: 400 }); }
 
-  // A shortlisted AI stay: nightly estimate, no dates yet (user sets on confirm), status 'shortlisted'.
+  // Resolve destination_id from the AI-supplied city (or fall back to matching the area text)
+  // against THIS trip's real destinations. Never trust an id from the model.
+  let destinationId: number | null = opt.destination_id ?? null;
+  if (destinationId == null) {
+    const dests = await scopedQuery(
+      ctx,
+      `SELECT destination_id, city FROM trip_destinations WHERE {{tenant}} AND trip_id = ?`,
+      [tripId],
+    );
+    const hay = `${opt.city ?? ''} ${opt.area ?? ''}`.toLowerCase();
+    // Prefer an exact city match; else the first destination whose city appears in the text.
+    const exact = dests.find((d) => String(d.city ?? '').toLowerCase() === String(opt.city ?? '').toLowerCase() && opt.city);
+    const contains = dests.find((d) => d.city && hay.includes(String(d.city).toLowerCase()));
+    const hit = exact ?? contains;
+    if (hit) destinationId = Number(hit.destination_id);
+  }
+
   const stayId = await createStay(
     ctx, tripId,
     {
-      destination_id: opt.destination_id ?? null,
+      destination_id: destinationId,
       name: opt.name ?? 'Suggested stay',
       accommodation_type: opt.accommodation_type ?? null,
       area: opt.area ?? null,

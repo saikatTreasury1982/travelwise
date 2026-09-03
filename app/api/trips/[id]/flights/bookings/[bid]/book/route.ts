@@ -21,6 +21,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   await markBookingBooked(ctx, tripId, bookingId, {
     total_paid: Number(body.total_paid),
     currency_code: body.currency_code,
+    total_paid_base: body.total_paid_base != null ? Number(body.total_paid_base) : null, // mode C
     airline_pnr: body.airline_pnr ?? null,
     agency_reference: body.agency_reference ?? null,
     booking_source: body.booking_source ?? null,

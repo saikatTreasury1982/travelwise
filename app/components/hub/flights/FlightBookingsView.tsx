@@ -5,7 +5,7 @@ import FlightSuggestPanel from './FlightSuggestPanel';
 import BookPlannedFlight from './BookPlannedFlight';
 import VarianceChip from '@/app/components/ui/VarianceChip';
 
-interface Props { tripId: number; currencies: Currency[]; }
+interface Props { tripId: number; currencies: Currency[]; baseCurrency: string; }
 interface Currency { currency_code: string; currency_name: string; currency_symbol?: string | null; }
 interface Traveler {
   traveler_id: number; traveler_name: string;
@@ -29,7 +29,7 @@ function earliestDepart(legs: any[]): string {
   return legs.map((l) => l.departure_datetime).filter(Boolean).sort()[0] ?? '';
 }
 
-export default function FlightBookingsView({ tripId, currencies }: Props) {
+export default function FlightBookingsView({ tripId, currencies, baseCurrency }: Props) {
   const [extracting, setExtracting] = useState(false);
   const [reviewData, setReviewData] = useState<any | null>(null);
   const [editing, setEditing] = useState<{ bookingId: number; data: any; bearerIds: number[] } | null>(null);
@@ -133,7 +133,7 @@ export default function FlightBookingsView({ tripId, currencies }: Props) {
     return (
       <FlightBookingReview
         tripId={tripId} bookingId={editing.bookingId} data={editing.data}
-        initialBearerIds={editing.bearerIds} currencies={currencies}
+        initialBearerIds={editing.bearerIds} currencies={currencies} baseCurrency={baseCurrency}
         onCancel={() => setEditing(null)} onSaved={() => { setEditing(null); loadBookings(); }}
       />
     );
@@ -145,6 +145,7 @@ export default function FlightBookingsView({ tripId, currencies }: Props) {
         data={reviewData}
         mergeIntoBookingId={reviewData.mergeIntoBookingId ?? null}
         currencies={currencies}
+        baseCurrency={baseCurrency}
         onCancel={() => setReviewData(null)}
         onSaved={() => { setReviewData(null); loadBookings(); }}
       />
@@ -317,6 +318,7 @@ export default function FlightBookingsView({ tripId, currencies }: Props) {
                     tripId={tripId}
                     bookingId={b.booking_id}
                     currencies={currencies}
+                    baseCurrency={baseCurrency}
                     estimatedPrice={b.estimated_price ?? null}
                     currency={b.currency_code ?? null}
                     onCancel={() => setBookingPanelFor(null)}

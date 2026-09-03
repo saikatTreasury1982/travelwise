@@ -12,6 +12,7 @@ interface Props {
   destinations: Destination[];
   tripStart: string;
   tripEnd: string;
+  baseCurrency: string;
 }
 
 function nights(ci?: string | null, co?: string | null) {
@@ -21,7 +22,7 @@ function nights(ci?: string | null, co?: string | null) {
 }
 const money = (n: number, c?: string | null) => `${c ?? ''} ${n.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 
-export default function LodgingView({ tripId, currencies, destinations, tripStart, tripEnd }: Props) {
+export default function LodgingView({ tripId, currencies, destinations, tripStart, tripEnd, baseCurrency }: Props) {
   const [stays, setStays] = useState<any[]>([]);
   const [roster, setRoster] = useState<Traveler[]>([]);
   const [loading, setLoading] = useState(true);
@@ -126,7 +127,7 @@ export default function LodgingView({ tripId, currencies, destinations, tripStar
       )}
       {/* mark-booked dialog */}
       {bookFor != null && (
-        <MarkBooked tripId={tripId} stay={stays.find((s) => s.stay_id === bookFor)} currencies={currencies}
+        <MarkBooked tripId={tripId} stay={stays.find((s) => s.stay_id === bookFor)} currencies={currencies} baseCurrency={baseCurrency}
           onDone={() => { setBookFor(null); load(); }} onCancel={() => setBookFor(null)} />
       )}
     </div>

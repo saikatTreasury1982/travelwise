@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import CurrencyCombobox, { type Currency } from '@/app/components/ui/CurrencyCombobox';
 import TogglePill from '@/app/components/ui/TogglePill';
@@ -44,9 +44,16 @@ export default function AdhocExpenses({
   const [bearers, setBearers] = useState<number[]>([]);
   const [note, setNote] = useState('');
 
+  // FX preview / mode-C override
+  const [rate, setRate] = useState<number | null>(null);
+  const [pinBase, setPinBase] = useState(false);
+  const [baseAmt, setBaseAmt] = useState('');
+  const foreign = !!currency && currency !== baseCurrency;
+
   function resetForm() {
     setName(''); setAmount(''); setCurrency(baseCurrency); setCategory('Other');
     setDate(''); setActive(true); setBearers([]); setNote('');
+    setPinBase(false); setBaseAmt('');
   }
   function beginAdd() { resetForm(); setEditingId(null); setError(''); setShowForm(true); }
   function beginEdit(e: AdhocExpense) {
@@ -65,9 +72,25 @@ export default function AdhocExpenses({
   const perHead = bearers.length > 0 && Number.isFinite(amountNum) && amountNum > 0
     ? amountNum / bearers.length : 0;
 
+  useEffect(() => {
+    if (!foreign) { setRate(null); return; }
+    let live = true;
+    fetch(`/api/fx?from=${encodeURIComponent(currency)}&to=${encodeURIComponent(baseCurrency)}`)
+      .then((r) => r.ok ? r.json() : { rate: null })
+      .then((d) => { if (live) setRate(d.rate ?? null); })
+      .catch(() => { if (live) setRate(null); });
+    return () => { live = false; };
+  }, [currency, baseCurrency, foreign]);
+
+  const autoBase = foreign && rate != null && amountNum > 0 ? amountNum * rate : null;
+
   async function submit() {
     if (!name.trim() || !(amountNum > 0) || bearers.length === 0) {
       setError('Name, a valid amount, and at least one traveller are required.');
+      return;
+    }
+    if (foreign && pinBase && !baseAmt) {
+      setError(`Enter the exact ${baseCurrency} amount, or switch back to mid-market.`);
       return;
     }
     setBusy(true); setError('');
@@ -75,6 +98,7 @@ export default function AdhocExpenses({
       description: name.trim(), estimatedAmount: amountNum, currency,
       categoryLabel: category, expenseDate: date || null, isActive: active,
       bearerTravelerIds: bearers, notes: note || null,
+      baseAmountOverride: (foreign && pinBase && baseAmt) ? Number(baseAmt) : null,
     };
     try {
       const url = editingId ? `/api/trips/${tripId}/adhoc/${editingId}` : `/api/trips/${tripId}/adhoc`;
@@ -147,6 +171,33 @@ export default function AdhocExpenses({
               <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full h-[44px] px-3 rounded-lg text-[14px]" style={fieldStyle} />
             </div>
           </div>
+
+          {/* FX preview + pin-exact toggle (only when currency ≠ base) */}
+          {foreign && (
+            <div className="mt-3 rounded-xl p-3 text-[12px]" style={{ background: 'color-mix(in srgb, var(--accent) 6%, var(--surface))', border: '1px solid var(--border)' }}>
+              {!pinBase ? (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span style={{ color: 'var(--ink-soft)' }}>
+                    {autoBase != null
+                      ? <>≈ <strong style={{ color: 'var(--ink)' }}>{money(autoBase, baseCurrency)}</strong> in your forecast <span style={{ color: 'var(--ink-faint)' }}>(mid-market)</span></>
+                      : rate == null ? 'Rate unavailable — will convert on save.' : 'Enter an amount to preview.'}
+                  </span>
+                  <button type="button" onClick={() => setPinBase(true)} className="tw-link ml-auto" style={{ color: 'var(--accent-deep)' }}>
+                    Enter exact {baseCurrency} instead →
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span style={{ color: 'var(--ink-soft)' }}>Exact {baseCurrency} charged</span>
+                  <input type="number" value={baseAmt} onChange={(e) => setBaseAmt(e.target.value)} placeholder={baseCurrency}
+                    className="px-2 rounded-lg text-[13px]" style={{ ...fieldStyle, height: 34, width: 130 }} />
+                  <button type="button" onClick={() => { setPinBase(false); setBaseAmt(''); }} className="tw-link ml-auto" style={{ color: 'var(--ink-faint)' }}>
+                    Use mid-market instead
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* status */}
           <div className="mt-3">
