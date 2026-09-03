@@ -21,6 +21,10 @@ export interface ExpenseInput {
   notes?: string | null;
   categoryLabel?: string | null;
   isActive?: boolean;   // default true
+  /** Mode C: caller-supplied base amount (skips FX lookup). */
+  baseAmountOverride?: number | null;
+  /** Optional explicit rate to store with a mode-C override; derived if omitted. */
+  fxRateOverride?: number | null;
 }
 
 /** The trip's base currency = the primary traveller's currency. */
@@ -54,10 +58,18 @@ export async function getEligibleBearers(ctx: TenantContext, tripId: number): Pr
  */
 export async function createExpense(ctx: TenantContext, input: ExpenseInput): Promise<number> {
   const base = await getTripBaseCurrency(ctx, input.tripId);
-  const { convert } = await import('@/app/lib/services/fx');
-  const fx = await convert(input.estimatedAmount, input.currency, base);
-  const rate = fx.rate ?? 1;
-  const baseAmount = fx.baseAmount ?? input.estimatedAmount;
+  let rate: number;
+  let baseAmount: number;
+  if (input.baseAmountOverride != null) {
+    // Mode C — caller pinned the exact base amount; rate is implicit.
+    baseAmount = input.baseAmountOverride;
+    rate = input.fxRateOverride ?? (input.estimatedAmount > 0 ? input.baseAmountOverride / input.estimatedAmount : 1);
+  } else {
+    const { convert } = await import('@/app/lib/services/fx');
+    const fx = await convert(input.estimatedAmount, input.currency, base);
+    rate = fx.rate ?? 1;
+    baseAmount = fx.baseAmount ?? input.estimatedAmount;
+  }
 
   const bearers = [...new Set(input.bearerTravelerIds)].filter((n) => Number.isFinite(n));
   const isShared = bearers.length > 1;
@@ -236,10 +248,18 @@ export async function listAdhocExpenses(ctx: TenantContext, tripId: number): Pro
 /** Update an expense: re-converts FX, rewrites the split rows for the new bearers. */
 export async function updateExpense(ctx: TenantContext, tripId: number, expenseId: number, input: Omit<ExpenseInput, 'tripId' | 'sourceModule' | 'sourceId'>): Promise<void> {
   const base = await getTripBaseCurrency(ctx, tripId);
-  const { convert } = await import('@/app/lib/services/fx');
-  const fx = await convert(input.estimatedAmount, input.currency, base);
-  const rate = fx.rate ?? 1;
-  const baseAmount = fx.baseAmount ?? input.estimatedAmount;
+  let rate: number;
+  let baseAmount: number;
+  if (input.baseAmountOverride != null) {
+    // Mode C — caller pinned the exact base amount; rate is implicit.
+    baseAmount = input.baseAmountOverride;
+    rate = input.fxRateOverride ?? (input.estimatedAmount > 0 ? input.baseAmountOverride / input.estimatedAmount : 1);
+  } else {
+    const { convert } = await import('@/app/lib/services/fx');
+    const fx = await convert(input.estimatedAmount, input.currency, base);
+    rate = fx.rate ?? 1;
+    baseAmount = fx.baseAmount ?? input.estimatedAmount;
+  }
   const bearers = [...new Set(input.bearerTravelerIds)].filter((n) => Number.isFinite(n));
   const isShared = bearers.length > 1;
 
@@ -376,8 +396,8 @@ export async function recordActual(
          actual_date = ?, paid_by_traveler_id = ?, payment_method_key = ?, notes = ?
        WHERE {{tenant}} AND actual_id = ?`,
       [input.amount, input.currency, rate, baseAmount, input.date ?? null,
-       input.paidByTravelerId ?? null, input.paymentMethodKey ?? null, input.notes ?? null,
-       Number(existing[0].actual_id)] as import('@libsql/client').InValue[]
+      input.paidByTravelerId ?? null, input.paymentMethodKey ?? null, input.notes ?? null,
+      Number(existing[0].actual_id)] as import('@libsql/client').InValue[]
     );
   } else {
     await scopedInsert(ctx, 'expense_actuals', {
@@ -402,24 +422,39 @@ export interface Variance {
 
 export async function getVariance(ctx: TenantContext, tripId: number): Promise<Variance> {
   const base = await getTripBaseCurrency(ctx, tripId);
-  const rows = await scopedQuery(
+
+  // Forecast per module — scoped to tenant.
+  const forecastRows = await scopedQuery(
     ctx,
-    `SELECT e.source_module,
-            SUM(e.estimated_amount_base) AS forecast,
-            COALESCE((SELECT SUM(a.actual_amount_base) FROM expense_actuals a
-                      JOIN expenses e2 ON e2.expense_id = a.expense_id
-                      WHERE e2.trip_id = e.trip_id AND e2.source_module = e.source_module AND e2.is_active = 1), 0) AS actual
-     FROM expenses e
+    `SELECT source_module, SUM(estimated_amount_base) AS forecast
+     FROM expenses
+     WHERE {{tenant}} AND trip_id = ? AND is_active = 1
+     GROUP BY source_module`,
+    [tripId],
+  );
+
+  // Actuals per module — scoped via the parent expense (e), not an unscoped subquery.
+  const actualRows = await scopedQuery(
+    ctx,
+    `SELECT e.source_module, SUM(a.actual_amount_base) AS actual
+     FROM expense_actuals a
+     JOIN expenses e ON e.expense_id = a.expense_id
      WHERE {{tenant:e}} AND e.trip_id = ? AND e.is_active = 1
      GROUP BY e.source_module`,
-    [tripId]
+    [tripId],
   );
+
+  const actualByMod = new Map<string, number>();
+  for (const r of actualRows) actualByMod.set(String(r.source_module), Number(r.actual ?? 0));
+
   let fTotal = 0, aTotal = 0;
-  const modules = rows.map((r) => {
+  const modules = forecastRows.map((r) => {
+    const mod = String(r.source_module);
     const f = Number(r.forecast ?? 0);
-    const a = Number(r.actual ?? 0);
+    const a = actualByMod.get(mod) ?? 0;
     fTotal += f; aTotal += a;
-    return { source_module: String(r.source_module), forecast: f, actual: a, variance: a - f };
+    return { source_module: mod, forecast: f, actual: a, variance: a - f };
   });
+
   return { base_currency: base, forecast_total: fTotal, actual_total: aTotal, variance: aTotal - fTotal, modules };
 }

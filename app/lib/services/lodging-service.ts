@@ -4,7 +4,8 @@
 // expense (source_module='accommodation', source_id=stay_id) via the reconciler.
 import { scopedQuery, scopedExecute, scopedInsert } from '@/app/lib/db/scoped';
 import type { TenantContext } from '@/app/lib/db/scoped';
-import { createExpense, updateExpense, deleteExpense } from '@/app/lib/services/expense-service';
+import { createExpense, updateExpense, deleteExpense, getTripBaseCurrency } from '@/app/lib/services/expense-service';
+import { convert } from '@/app/lib/services/fx';
 import type { InValue } from '@libsql/client';
 
 export interface LodgingCounts { confirmed: number; shortlisted: number; }
@@ -186,22 +187,46 @@ export async function unconfirmStay(ctx: TenantContext, tripId: number, stayId: 
  *  Keeps estimated_price; forecast switches to total_paid via COALESCE. */
 export async function markStayBooked(
   ctx: TenantContext, tripId: number, stayId: number,
-  real: { total_paid: number; currency_code?: string | null; confirmation_reference?: string | null;
-          booking_source?: string | null; booking_date?: string | null },
+  real: {
+    total_paid: number; currency_code?: string | null; total_paid_base?: number | null;
+    confirmation_reference?: string | null; booking_source?: string | null; booking_date?: string | null
+  },
 ): Promise<void> {
+  const currency = real.currency_code ?? null;
+  const base = await getTripBaseCurrency(ctx, tripId);
+
+  let baseAmount: number | null = null;
+  let fxRate: number | null = null;
+  let fxSource: 'auto' | 'manual' | null = null;
+
+  if (real.total_paid_base != null && currency && base) {
+    // Mode C — user gave both amounts; rate is implicit, no lookup.
+    baseAmount = real.total_paid_base;
+    fxRate = real.total_paid > 0 ? real.total_paid_base / real.total_paid : null;
+    fxSource = 'manual';
+  } else if (currency && base) {
+    // Mode B — mid-market auto-convert.
+    const { rate, baseAmount: ba } = await convert(real.total_paid, currency, base);
+    baseAmount = ba;
+    fxRate = rate;
+    fxSource = 'auto';
+  }
+
   await scopedExecute(
     ctx,
     `UPDATE lodging_stays SET
        booking_confirmed = 1,
        total_paid = ?, currency_code = COALESCE(?, currency_code),
+       fx_rate_to_base = ?, total_paid_base = ?, fx_source = ?,
        confirmation_reference = COALESCE(?, confirmation_reference),
        booking_source = COALESCE(?, booking_source),
        booking_date = COALESCE(?, booking_date),
        updated_at = datetime('now')
      WHERE {{tenant}} AND trip_id = ? AND stay_id = ?`,
     [
-      real.total_paid, real.currency_code ?? null, real.confirmation_reference ?? null,
-      real.booking_source ?? null, real.booking_date ?? null, tripId, stayId,
+      real.total_paid, currency, fxRate, baseAmount, fxSource,
+      real.confirmation_reference ?? null, real.booking_source ?? null, real.booking_date ?? null,
+      tripId, stayId,
     ] as InValue[],
   );
   await syncExpenseForStay(ctx, tripId, stayId);
@@ -223,8 +248,8 @@ async function findStayExpenseId(ctx: TenantContext, tripId: number, stayId: num
 export async function syncExpenseForStay(ctx: TenantContext, tripId: number, stayId: number): Promise<void> {
   const rows = await scopedQuery(
     ctx,
-    `SELECT status, total_paid, estimated_price, currency_code, name FROM lodging_stays
-     WHERE {{tenant}} AND trip_id = ? AND stay_id = ? LIMIT 1`,
+    `SELECT status, total_paid, estimated_price, total_paid_base, fx_rate_to_base, currency_code, name
+     FROM lodging_stays WHERE {{tenant}} AND trip_id = ? AND stay_id = ? LIMIT 1`,
     [tripId, stayId],
   );
   const s = rows[0];
@@ -236,6 +261,11 @@ export async function syncExpenseForStay(ctx: TenantContext, tripId: number, sta
     : s.estimated_price != null ? Number(s.estimated_price)
       : null;
   const currency = s.currency_code == null ? null : String(s.currency_code);
+  // When booked with a stored base (mode B/C), hand that to the expense so the
+  // forecast uses the real landed cost — especially a user-pinned rate (mode C).
+  const usingRealPaid = s.total_paid != null;
+  const baseOverride = usingRealPaid && s.total_paid_base != null ? Number(s.total_paid_base) : null;
+  const rateOverride = usingRealPaid && s.fx_rate_to_base != null ? Number(s.fx_rate_to_base) : null;
 
   const bearerRows = await scopedQuery(
     ctx, `SELECT traveler_id FROM lodging_stay_bearers WHERE {{tenant}} AND stay_id = ?`, [stayId],
@@ -255,12 +285,14 @@ export async function syncExpenseForStay(ctx: TenantContext, tripId: number, sta
     await createExpense(ctx, {
       tripId, sourceModule: 'accommodation', sourceId: stayId,
       description, estimatedAmount: total!, currency: currency!,
-      categoryLabel: 'Accommodations', bearerTravelerIds: bearerIds, isActive: true,
+      categoryLabel: 'Lodging', bearerTravelerIds: bearerIds, isActive: true,
+      baseAmountOverride: baseOverride, fxRateOverride: rateOverride,
     });
   } else {
     await updateExpense(ctx, tripId, existingId, {
       description, estimatedAmount: total!, currency: currency!,
-      categoryLabel: 'Accommodations', bearerTravelerIds: bearerIds, isActive: true,
+      categoryLabel: 'Lodging', bearerTravelerIds: bearerIds, isActive: true,
+      baseAmountOverride: baseOverride, fxRateOverride: rateOverride,
     });
   }
 }
