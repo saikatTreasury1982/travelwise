@@ -13,6 +13,7 @@ import { listChecklist } from '@/app/lib/services/checklist-service';
 import ChecklistView from '@/app/components/hub/ChecklistView';
 import FlightBookingsView from '@/app/components/hub/flights/FlightBookingsView';
 import LodgingView from '@/app/components/hub/lodging/LodgingView';
+import ItineraryView from '@/app/components/hub/itinerary/ItineraryView';
 
 export const dynamic = 'force-dynamic';
 
@@ -172,6 +173,26 @@ export default async function TripModulePage({ params }: { params: Promise<{ id:
           <p className="text-[14px] mb-6" style={{ color: 'var(--ink-soft)' }}>Find places to stay — the co-pilot suggests options, you shortlist, confirm, then book.</p>
           <LodgingView tripId={tripId} currencies={currencies} baseCurrency={baseCurrency}
             destinations={trip.destinations.map((d) => ({ destination_id: d.destination_id, city: d.city, country: d.country }))}
+            tripStart={trip.start_date} tripEnd={trip.end_date} />
+        </div>
+      </div>
+    );
+  }
+
+  // Real module: Itinerary
+  if (module === 'itinerary') {
+    const baseCurrency = await getTripBaseCurrency(ctx, tripId);
+    return (
+      <div style={{ background: 'var(--canvas)', minHeight: '100vh' }}>
+        <TopNav firstName={firstName} active="trips" />
+        <div className="px-6 md:px-10 py-8 max-w-[1000px] mx-auto">
+          <Link href={`/trips/${tripId}`} className="tw-link text-[13px] font-medium inline-flex items-center gap-1.5 mb-6" style={{ color: 'var(--ink-soft)' }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
+            Back to {trip.trip_name}
+          </Link>
+          <h1 className="mb-2" style={{ fontFamily: 'var(--font-display)', fontSize: 'clamp(28px,4vw,38px)', color: 'var(--ink)' }}>Itinerary</h1>
+          <p className="text-[14px] mb-6" style={{ color: 'var(--ink-soft)' }}>Plan your days — add activities, group them, and only the finalized plan feeds your forecast.</p>
+          <ItineraryView tripId={tripId} currencies={currencies} baseCurrency={baseCurrency}
             tripStart={trip.start_date} tripEnd={trip.end_date} />
         </div>
       </div>
