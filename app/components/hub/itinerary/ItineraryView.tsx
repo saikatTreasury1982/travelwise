@@ -651,3 +651,106 @@ function ActivityForm({
         </div>
     );
 }
+
+// ── AI draft door: mini-conversation → writes a new itinerary ────────────────
+interface DraftMsg { role: 'user' | 'assistant'; content: string; }
+
+function ItineraryDraftPanel({
+  tripId, onDrafted, onClose,
+}: {
+  tripId: number;
+  onDrafted: (itineraryId: number) => void;
+  onClose: () => void;
+}) {
+  const [messages, setMessages] = useState<DraftMsg[]>([]);
+  const [input, setInput] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [started, setStarted] = useState(false);
+
+  async function send(text: string) {
+    const next: DraftMsg[] = [...messages, { role: 'user', content: text }];
+    setMessages(next);
+    setInput('');
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/trips/${tripId}/itinerary/draft`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: next }),
+      });
+      const data = await res.json();
+      if (data.drafted) {
+        // Whole plan written server-side — jump into it.
+        onDrafted(data.itinerary_id);
+        return;
+      }
+      // Mini-conversation: show the co-pilot's question.
+      setMessages((m) => [...m, { role: 'assistant', content: data.message || 'Tell me a little more.' }]);
+    } catch {
+      setMessages((m) => [...m, { role: 'assistant', content: 'Something went wrong — try again.' }]);
+    } finally { setBusy(false); }
+  }
+
+  // First send kicks it off with a default brief if the user didn't type one.
+  function start(brief: string) {
+    setStarted(true);
+    send(brief || 'Please draft a complete itinerary for my trip.');
+  }
+
+  return (
+    <div className="rounded-2xl p-5" style={{ background: 'var(--surface)', border: '1px solid var(--accent)' }}>
+      <div className="flex items-center justify-between mb-3">
+        <div className="text-[15px] font-semibold" style={{ color: 'var(--ink)' }}>✦ Draft my itinerary</div>
+        <button onClick={onClose} className="tw-link text-[12px]" style={{ color: 'var(--ink-soft)' }}>Cancel</button>
+      </div>
+
+      {/* conversation */}
+      {messages.length > 0 && (
+        <div className="space-y-2 mb-3">
+          {messages.map((m, i) => (
+            <div key={i} className="text-[13px] rounded-lg px-3 py-2"
+              style={{
+                background: m.role === 'user' ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'color-mix(in srgb, var(--ink) 4%, transparent)',
+                color: 'var(--ink)',
+                marginLeft: m.role === 'user' ? 'auto' : 0,
+                maxWidth: '85%',
+              }}>
+              {m.content}
+            </div>
+          ))}
+          {busy && <div className="text-[12px]" style={{ color: 'var(--ink-faint)' }}>Thinking…</div>}
+        </div>
+      )}
+
+      {!started ? (
+        <div>
+          <p className="text-[12.5px] mb-2" style={{ color: 'var(--ink-soft)' }}>
+            Tell the co-pilot how you'd like the trip to feel (optional) — pace, interests, must-dos — or just draft.
+          </p>
+          <textarea value={input} onChange={(e) => setInput(e.target.value)} rows={2}
+            placeholder="e.g. relaxed pace, love food & local culture, one big adventure day"
+            className="w-full p-2.5 rounded-lg text-[13px] mb-2" style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--ink)', resize: 'none' }} />
+          <div className="flex gap-2 justify-end">
+            <button disabled={busy} onClick={() => start(input.trim())}
+              className="tw-btn text-[13px] font-semibold px-4 py-2 rounded-lg"
+              style={{ background: 'var(--accent)', color: 'var(--accent-ink)', opacity: busy ? 0.5 : 1 }}>
+              {busy ? 'Drafting…' : 'Draft it ✦'}
+            </button>
+          </div>
+        </div>
+      ) : (
+        // Reply box for the mini-conversation (only appears if the AI asked something)
+        !busy && (
+          <div className="flex gap-2">
+            <input value={input} onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter' && input.trim()) send(input.trim()); }}
+              placeholder="Your answer…"
+              className="flex-1 p-2.5 rounded-lg text-[13px]" style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--ink)' }} />
+            <button disabled={!input.trim()} onClick={() => send(input.trim())}
+              className="tw-btn text-[13px] font-semibold px-4 rounded-lg"
+              style={{ background: 'var(--accent)', color: 'var(--accent-ink)', opacity: input.trim() ? 1 : 0.5 }}>Send</button>
+          </div>
+        )
+      )}
+    </div>
+  );
+}

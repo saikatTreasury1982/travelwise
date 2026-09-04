@@ -17,6 +17,9 @@ export interface HubStats {
   flightsShortlisted: number;
   lodgingConfirmed: number;
   lodgingShortlisted: number;
+  itineraryActivities: number;
+  itineraryConfirmed: number;
+  itineraryHas: boolean;
 }
 
 function money(n: number, ccy: string) {
@@ -36,7 +39,10 @@ export default function TripHubCards({ tripId, travelerCount, stats }: { tripId:
     flightsConfirmed,
     flightsShortlisted,
     lodgingConfirmed,
-    lodgingShortlisted
+    lodgingShortlisted,
+    itineraryActivities,
+    itineraryConfirmed,
+    itineraryHas
   } = stats;
 
   const MODULES: (ModuleCard & { stat: string; statColor?: string })[] = [
@@ -60,7 +66,19 @@ export default function TripHubCards({ tripId, travelerCount, stats }: { tripId:
         ? `${lodgingConfirmed} confirmed${lodgingShortlisted > 0 ? ` · ${lodgingShortlisted} shortlisted` : ''}`
         : 'Not started',
     },
-    { key: 'itinerary', icon: '📅', title: 'Itinerary', hint: 'AI can generate a plan', stat: 'Not started' },
+    {
+      key: 'itinerary', icon: '🗺️', title: 'Itinerary',
+      hint: !itineraryHas
+        ? 'Plan day by day or let AI draft it'
+        : itineraryConfirmed > 0
+          ? `${itineraryActivities - itineraryConfirmed > 0 ? `${itineraryActivities - itineraryConfirmed} still being planned` : 'All days completed'}`
+          : 'Complete a day to add it to your forecast',
+      stat: itineraryHas
+        ? (itineraryActivities > 0
+          ? `${itineraryActivities} ${itineraryActivities === 1 ? 'activity' : 'activities'}${itineraryConfirmed > 0 ? ` · ${itineraryConfirmed} confirmed` : ''}`
+          : 'Started')
+        : 'Not started',
+    },
     {
       key: 'checklist', icon: '🧳', title: 'Checklist',
       hint: checklistHighPending > 0 ? `${checklistHighPending} high-priority to pack` : 'AI can build a list',

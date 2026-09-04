@@ -851,3 +851,128 @@ export async function getItineraryCounts(
     confirmedActivityCount: Number(confirmed[0]?.n ?? 0),
   };
 }
+
+// ── AI draft: write a whole parsed itinerary in one go ──────────────────────
+
+export interface DraftActivity {
+  activity_name: string;
+  start_time?: string | null;
+  end_time?: string | null;
+  estimated_cost?: number | null;
+  cost_type?: CostType;
+  headcount?: number | null;
+  notes?: string | null;
+}
+export interface DraftCategory { category_name: string; activities: DraftActivity[]; }
+export interface DraftDay {
+  day_number: number;
+  title?: string | null;
+  categories?: DraftCategory[];
+  ungrouped_activities?: DraftActivity[];
+}
+export interface DraftRange {
+  start_day: number;
+  end_day: number;
+  range_name?: string | null;
+  description?: string | null;
+  categories?: DraftCategory[];
+  ungrouped_activities?: DraftActivity[];
+}
+export interface DraftItinerary {
+  mode: ItineraryMode;
+  days?: DraftDay[];
+  ranges?: DraftRange[];
+}
+
+/** Create a brand-new AI itinerary from a parsed draft. Always non-finalized
+ *  (finalization is the user's call), everything 'planning' (nothing auto-
+ *  confirmed → no forecast impact until the user completes days). Activities
+ *  get the default cost-sharer bearer set. Currency defaults to base. */
+export async function createItineraryFromDraft(
+  ctx: TenantContext, tripId: number, draft: DraftItinerary,
+  opts: { title?: string | null; summary?: string | null } = {},
+): Promise<number> {
+  const base = await getTripBaseCurrency(ctx, tripId);
+  const defaultBearers = await defaultCostSharerIds(ctx, tripId);
+
+  // Root — created explicitly non-finalized (override the auto-finalize-first rule).
+  await scopedInsert(ctx, 'itineraries', {
+    trip_id: tripId, mode: draft.mode,
+    title: opts.title ?? null, summary: opts.summary ?? null,
+    source: 'ai', is_finalized: 0, generated_at: new Date().toISOString(),
+  });
+  const idRows = await scopedQuery(
+    ctx, `SELECT itinerary_id FROM itineraries WHERE {{tenant}} AND trip_id = ?
+          ORDER BY itinerary_id DESC LIMIT 1`, [tripId],
+  );
+  const itineraryId = Number(idRows[0].itinerary_id);
+
+  // Trip start for day dates.
+  const trip = await scopedQuery(
+    ctx, `SELECT start_date FROM trips WHERE {{tenant}} AND trip_id = ? LIMIT 1`, [tripId],
+  );
+  const tripStart = trip[0] ? String(trip[0].start_date) : null;
+
+  // Helper: write a bucket's categories + ungrouped activities.
+  async function writeBucketContent(
+    bucket: { dayId?: number; rangeId?: number },
+    categories: DraftCategory[] | undefined,
+    ungrouped: DraftActivity[] | undefined,
+  ) {
+    const b = bucket.dayId != null ? { dayId: bucket.dayId } : { rangeId: bucket.rangeId! };
+    // ungrouped first
+    for (const a of ungrouped ?? []) {
+      await writeDraftActivity(itineraryId, b, null, a);
+    }
+    // then each category + its activities
+    for (const c of categories ?? []) {
+      const catId = await createCategory(ctx, tripId, itineraryId, b, { category_name: c.category_name });
+      for (const a of c.activities ?? []) {
+        await writeDraftActivity(itineraryId, b, catId, a);
+      }
+    }
+  }
+
+  async function writeDraftActivity(
+    itinId: number, bucket: { dayId?: number; rangeId?: number }, categoryId: number | null, a: DraftActivity,
+  ) {
+    await createActivity(ctx, tripId, itinId, (bucket.dayId != null ? { dayId: bucket.dayId } : { rangeId: bucket.rangeId! }), {
+      activity_name: a.activity_name,
+      start_time: a.start_time ?? null, end_time: a.end_time ?? null,
+      activity_cost: a.estimated_cost ?? null,
+      currency_code: a.estimated_cost != null ? base : null,
+      cost_type: a.cost_type ?? 'total',
+      headcount: a.headcount ?? null,
+      is_active: true, notes: a.notes ?? null,
+      category_id: categoryId,
+    }, defaultBearers);
+  }
+
+  if (draft.mode === 'day') {
+    for (const d of draft.days ?? []) {
+      // Create the day (idempotent-ish: draft day_numbers are 1..N).
+      const dayDate = tripStart ? addDays(tripStart, d.day_number - 1) : (tripStart ?? '');
+      await scopedInsert(ctx, 'itinerary_days', {
+        trip_id: tripId, itinerary_id: itineraryId,
+        day_number: d.day_number, day_date: dayDate,
+        title: d.title ?? null, status: 'planning',
+      });
+      const dayRows = await scopedQuery(
+        ctx, `SELECT day_id FROM itinerary_days WHERE {{tenant}} AND itinerary_id = ? AND day_number = ? LIMIT 1`,
+        [itineraryId, d.day_number],
+      );
+      const dayId = Number(dayRows[0].day_id);
+      await writeBucketContent({ dayId }, d.categories, d.ungrouped_activities);
+    }
+  } else {
+    for (const r of draft.ranges ?? []) {
+      const rangeId = await createRange(ctx, tripId, itineraryId, {
+        start_day: r.start_day, end_day: r.end_day,
+        range_name: r.range_name ?? null, description: r.description ?? null,
+      });
+      await writeBucketContent({ rangeId }, r.categories, r.ungrouped_activities);
+    }
+  }
+
+  return itineraryId;
+}
