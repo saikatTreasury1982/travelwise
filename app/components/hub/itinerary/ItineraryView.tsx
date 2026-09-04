@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { ActivityRow, CategoryRow } from '@/app/lib/services/itinerary-service';
 import CurrencyCombobox from '@/app/components/ui/CurrencyCombobox';
+import SpendRhythm from './SpendRhythm';
 
 interface Traveler { traveler_id: number; traveler_name: string; is_primary: number; is_cost_sharer: number; is_active: number; }
 interface Currency { currency_code: string; currency_name: string; currency_symbol?: string | null; }
@@ -139,6 +140,7 @@ function ItineraryEditor({
     const [unplanned, setUnplanned] = useState<number[]>([]);
     const [addingRange, setAddingRange] = useState(false);
     const [localBuckets, setLocalBuckets] = useState<BucketNode[]>([]);
+    const [view, setView] = useState<'list' | 'timeline' | 'story'>('list');
 
     const loadTree = useCallback(async () => {
         setLoading(true);
@@ -277,6 +279,29 @@ function ItineraryEditor({
                         🗑 Delete &amp; start over
                     </button>
                 </div>
+            </div>
+
+            <SpendRhythm tripId={tripId} title="Itinerary spend by day" />
+
+            {/* view switcher */}
+            <div className="flex items-center gap-1.5 mb-4">
+                <span className="text-[12px]" style={{ color: 'var(--ink-faint)' }}>View</span>
+                {([
+                    { k: 'list', label: 'List' },
+                    { k: 'timeline', label: 'Timeline' },
+                    { k: 'story', label: 'Story' },
+                ] as const).map((v) => (
+                    <button key={v.k} onClick={() => setView(v.k)}
+                        className="text-[12px] px-3 py-1.5 rounded-lg"
+                        style={{
+                            background: view === v.k ? 'color-mix(in srgb, var(--accent) 18%, transparent)' : 'transparent',
+                            color: view === v.k ? 'var(--accent-deep)' : 'var(--ink-soft)',
+                            border: `1px solid ${view === v.k ? 'transparent' : 'var(--border)'}`,
+                            fontWeight: view === v.k ? 600 : 400, cursor: 'pointer',
+                        }}>
+                        {v.label}
+                    </button>
+                ))}
             </div>
 
             <div className="flex gap-5 items-start" style={{ flexWrap: 'wrap' }}>
@@ -951,6 +976,96 @@ function AddRangeForm({
                     Add range
                 </button>
             </div>
+        </div>
+    );
+}
+
+// ── Timeline view (Concept 1): activities on a vertical time axis ────────────
+const CAT_COLORS = ['var(--accent)', '#B4432B', '#2E7D5B', '#7C5CBF', '#3B7BB0', '#6E675E'];
+
+function TimelinePanel({ bucket, roster, baseCurrency }: { bucket: BucketNode; roster: Traveler[]; baseCurrency: string; }) {
+    const nameOf = (id: number) => roster.find((t) => t.traveler_id === id)?.traveler_name ?? '—';
+    function resolved(a: ActivityRow): number | null {
+        if (a.activity_cost == null) return null;
+        return a.cost_type === 'per_person' ? a.activity_cost * (a.headcount && a.headcount > 0 ? a.headcount : 1) : a.activity_cost;
+    }
+    const catIndex = new Map<number, number>();
+    bucket.categories.forEach((c, i) => catIndex.set(c.category_id, i));
+    const colorFor = (a: ActivityRow) => a.category_id == null ? 'var(--ink-soft)' : CAT_COLORS[(catIndex.get(a.category_id) ?? 0) % CAT_COLORS.length];
+    const catName = (a: ActivityRow) => a.category_id == null ? '' : (bucket.categories.find((c) => c.category_id === a.category_id)?.category_name ?? '');
+
+    const sorted = [...bucket.activities].sort((x, y) => {
+        if (x.start_time && y.start_time) return x.start_time.localeCompare(y.start_time);
+        if (x.start_time) return -1;
+        if (y.start_time) return 1;
+        return x.display_order - y.display_order;
+    });
+    const activeTotal = bucket.activities.filter((a) => a.is_active === 1).reduce((s, a) => s + (resolved(a) ?? 0), 0);
+
+    return (
+        <div className="rounded-2xl overflow-hidden" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+            <div className="flex items-center gap-3 px-5 py-4" style={{ borderBottom: '1px solid var(--divider)' }}>
+                <div>
+                    <div className="text-[16px] font-bold" style={{ color: 'var(--ink)' }}>
+                        {bucket.kind === 'day' ? (bucket.title || `Day ${bucket.day_number}`) : (bucket.range_name || `Days ${bucket.start_day}–${bucket.end_day}`)}
+                    </div>
+                    <div className="text-[12px] mt-0.5" style={{ color: 'var(--ink-soft)' }}>
+                        {bucket.kind === 'day' ? `Day ${bucket.day_number}` : `Days ${bucket.start_day}–${bucket.end_day}`}
+                        {bucket.status === 'confirmed' && <span className="ml-2" style={{ color: 'var(--success)' }}>· ✓ Completed</span>}
+                    </div>
+                </div>
+                {activeTotal > 0 && (
+                    <div className="ml-auto text-right">
+                        <div className="text-[18px] font-extrabold" style={{ color: 'var(--accent-deep)' }}>{baseCurrency} {activeTotal.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
+                        <div className="text-[11px]" style={{ color: 'var(--ink-faint)' }}>{bucket.activities.length} {bucket.activities.length === 1 ? 'activity' : 'activities'}</div>
+                    </div>
+                )}
+            </div>
+
+            <div className="px-5 py-4">
+                {sorted.length === 0 && (
+                    <p className="text-[13px] text-center py-6" style={{ color: 'var(--ink-faint)' }}>Nothing planned yet. Switch to List view to add activities.</p>
+                )}
+                {sorted.map((a) => {
+                    const cost = resolved(a);
+                    const color = colorFor(a);
+                    const light = color === 'var(--accent)';
+                    return (
+                        <div key={a.activity_id} className="flex gap-3 items-stretch" style={{ minHeight: 48, opacity: a.is_active === 1 ? 1 : 0.5 }}>
+                            <div className="text-[11px] pt-1 text-right flex-shrink-0" style={{ width: 46, color: 'var(--ink-faint)', fontVariantNumeric: 'tabular-nums' }}>
+                                {a.start_time || '—'}
+                            </div>
+                            <div className="flex-1" style={{ borderLeft: '2px solid var(--divider)', paddingLeft: 14, paddingBottom: 10 }}>
+                                <div className="rounded-[10px] px-3 py-2.5 relative" style={{ background: color, color: light ? 'var(--accent-ink)' : '#fff' }}>
+                                    <div className="text-[13.5px] font-semibold">{a.activity_name}</div>
+                                    <div className="text-[11px]" style={{ opacity: 0.9 }}>
+                                        {catName(a)}{catName(a) && (a.bearer_traveler_ids.length || a.end_time) ? ' · ' : ''}
+                                        {a.end_time ? `until ${a.end_time}` : ''}
+                                        {a.bearer_traveler_ids.length > 0 ? `${a.end_time ? ' · ' : ''}${a.bearer_traveler_ids.map(nameOf).join(', ')}` : ''}
+                                    </div>
+                                    {cost != null && (
+                                        <span className="absolute text-[12px] font-bold" style={{ top: 10, right: 12 }}>
+                                            {baseCurrency} {cost.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                            {a.currency_code && a.currency_code !== baseCurrency && (
+                                                <span className="text-[10px] font-normal" style={{ opacity: 0.85 }}> ({a.currency_code} {a.activity_cost})</span>
+                                            )}
+                                        </span>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+        </div>
+    );
+}
+
+// Stub — Story view (Part 3).
+function StoryPanel({ bucket, baseCurrency }: { bucket: BucketNode; baseCurrency: string }) {
+    return (
+        <div className="rounded-2xl p-8 text-center" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+            <p className="text-[14px]" style={{ color: 'var(--ink-soft)' }}>Story view — coming next.</p>
         </div>
     );
 }

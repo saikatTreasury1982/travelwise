@@ -989,3 +989,75 @@ export async function createItineraryFromDraft(
 
   return itineraryId;
 }
+
+// ── Spend-by-day/range for the FINALIZED itinerary (SpendRhythm chart) ──────
+export interface SpendBucket {
+  key: string;          // stable id for the bar
+  label: string;        // "1" / "Sea Days"
+  sublabel: string;     // date / span
+  amount_base: number;  // total in base currency
+}
+
+/** Base-currency spend per day (day mode) or per range (range mode) for the
+ *  trip's FINALIZED itinerary. Converts every activity's cost to base (all
+ *  activities, not just confirmed — useful while planning). Empty if no
+ *  finalized itinerary. */
+export async function getItinerarySpendByDay(ctx: TenantContext, tripId: number): Promise<{ mode: ItineraryMode | null; base_currency: string; buckets: SpendBucket[] }> {
+  const base = await getTripBaseCurrency(ctx, tripId);
+  const fin = await scopedQuery(
+    ctx, `SELECT itinerary_id, mode FROM itineraries WHERE {{tenant}} AND trip_id = ? AND is_finalized = 1 LIMIT 1`, [tripId],
+  );
+  if (!fin[0]) return { mode: null, base_currency: base, buckets: [] };
+  const itineraryId = Number(fin[0].itinerary_id);
+  const mode = String(fin[0].mode) as ItineraryMode;
+
+  const acts = await scopedQuery(
+    ctx,
+    `SELECT day_id, day_range_id, activity_cost, currency_code, cost_type, headcount, is_active
+     FROM itinerary_activities WHERE {{tenant}} AND itinerary_id = ?`,
+    [itineraryId],
+  );
+
+  // Convert each active, costed activity to base and sum per bucket id.
+  const { convert } = await import('@/app/lib/services/fx');
+  const perBucket = new Map<number, number>();
+  for (const a of acts) {
+    if (Number(a.is_active ?? 1) !== 1 || a.activity_cost == null) continue;
+    const unit = Number(a.activity_cost);
+    const total = String(a.cost_type ?? 'total') === 'per_person'
+      ? unit * (a.headcount && Number(a.headcount) > 0 ? Number(a.headcount) : 1) : unit;
+    const cur = a.currency_code == null ? base : String(a.currency_code);
+    const { baseAmount } = await convert(total, cur, base);
+    const amt = baseAmount ?? total;
+    const bid = mode === 'day' ? Number(a.day_id) : Number(a.day_range_id);
+    perBucket.set(bid, (perBucket.get(bid) ?? 0) + amt);
+  }
+
+  const buckets: SpendBucket[] = [];
+  if (mode === 'day') {
+    const days = await scopedQuery(
+      ctx, `SELECT day_id, day_number, day_date FROM itinerary_days WHERE {{tenant}} AND itinerary_id = ? ORDER BY day_number`, [itineraryId],
+    );
+    for (const d of days) {
+      const id = Number(d.day_id);
+      buckets.push({
+        key: `d${id}`, label: String(d.day_number),
+        sublabel: String(d.day_date), amount_base: perBucket.get(id) ?? 0,
+      });
+    }
+  } else {
+    const ranges = await scopedQuery(
+      ctx, `SELECT day_range_id, start_day, end_day, range_name FROM itinerary_day_ranges WHERE {{tenant}} AND itinerary_id = ? ORDER BY display_order, start_day`, [itineraryId],
+    );
+    for (const r of ranges) {
+      const id = Number(r.day_range_id);
+      buckets.push({
+        key: `r${id}`,
+        label: r.range_name ? String(r.range_name) : `Days ${r.start_day}–${r.end_day}`,
+        sublabel: `Days ${r.start_day}–${r.end_day}`, amount_base: perBucket.get(id) ?? 0,
+      });
+    }
+  }
+
+  return { mode, base_currency: base, buckets };
+}
