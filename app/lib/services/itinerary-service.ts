@@ -456,6 +456,19 @@ export async function reorderCategories(
   }
 }
 
+/** Persist a new range order (range-mode left rail). orderedIds = day_range_ids top-to-bottom. */
+export async function reorderRanges(
+  ctx: TenantContext, tripId: number, orderedIds: number[],
+): Promise<void> {
+  for (let i = 0; i < orderedIds.length; i++) {
+    await scopedExecute(
+      ctx, `UPDATE itinerary_day_ranges SET display_order = ?, updated_at = datetime('now')
+            WHERE {{tenant}} AND trip_id = ? AND day_range_id = ?`,
+      [i, tripId, orderedIds[i]] as InValue[],
+    );
+  }
+}
+
 // ── Categories (display-only grouping) ──────────────────────────────────────
 
 /** Create a grouping category under a day OR range. No cost — display only. */

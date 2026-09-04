@@ -36,7 +36,11 @@ export default function ItineraryView({ tripId, currencies, baseCurrency, tripSt
             setItineraries(list);
             setRoster(t.travelers ?? []);
             // Default to the finalized plan, else the first.
-            setActiveId((prev) => prev ?? (list.find((x) => x.is_finalized === 1)?.itinerary_id ?? list[0]?.itinerary_id ?? null));
+            setActiveId((prev) => {
+                const stillExists = prev != null && prev !== 0 && list.some((x) => x.itinerary_id === prev);
+                if (stillExists) return prev;
+                return list.find((x) => x.is_finalized === 1)?.itinerary_id ?? list[0]?.itinerary_id ?? null;
+            });
         } finally { setLoading(false); }
     }, [tripId]);
 
@@ -131,8 +135,10 @@ function ItineraryEditor({
 }) {
     const [tree, setTree] = useState<ItineraryTree | null>(null);
     const [loading, setLoading] = useState(true);
-    const [activeBucket, setActiveBucket] = useState<number>(0);   // index into tree.buckets
+    const [activeBucket, setActiveBucket] = useState<number>(0);   // index into buckets
     const [unplanned, setUnplanned] = useState<number[]>([]);
+    const [addingRange, setAddingRange] = useState(false);
+    const [localBuckets, setLocalBuckets] = useState<BucketNode[]>([]);
 
     const loadTree = useCallback(async () => {
         setLoading(true);
@@ -151,21 +157,58 @@ function ItineraryEditor({
 
     useEffect(() => { loadTree(); }, [loadTree]);
 
+    // Keep local (optimistic) order in sync whenever the tree (re)loads.
+    useEffect(() => {
+        if (tree) setLocalBuckets(tree.buckets);
+    }, [tree]);
+
     const meta = itineraries.find((i) => i.itinerary_id === itineraryId);
     const finalized = meta?.is_finalized === 1;
 
-    async function addRange() {
-        // Suggest the first unplanned span as the default range bounds.
-        const start = unplanned[0] ?? 1;
-        let end = start;
-        for (const d of unplanned) { if (d === end + 1) end = d; else if (d > start) break; }
-        const name = prompt('Name this stretch (e.g. "Sea Days", "Tokyo"):', '');
-        if (name === null) return;
+    // ── Reorder a range up/down (range mode only) — optimistic, background save ──
+    function moveRange(fromIdx: number, dir: -1 | 1) {
+        const toIdx = fromIdx + dir;
+        if (toIdx < 0 || toIdx >= localBuckets.length) return;
+        const reordered = [...localBuckets];
+        const [moved] = reordered.splice(fromIdx, 1);
+        reordered.splice(toIdx, 0, moved);
+        setLocalBuckets(reordered);                 // 1. move on screen instantly
+
+        // keep the moved bucket selected
+        const movedKey = moved.day_range_id ?? moved.day_id;
+        const newIdx = reordered.findIndex((b) => (b.day_range_id ?? b.day_id) === movedKey);
+        if (newIdx >= 0) setActiveBucket(newIdx);
+
+        // 2. persist in the background; reconcile only on failure
+        const orderedIds = reordered.map((b) => b.day_range_id!).filter((x) => x != null);
+        fetch(`/api/trips/${tripId}/itinerary/${itineraryId}/reorder`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ kind: 'range', ordered_ids: orderedIds }),
+        }).then((res) => { if (!res.ok) loadTree(); }).catch(() => loadTree());
+    }
+
+    async function submitRange(startDay: number, endDay: number, name: string) {
         const res = await fetch(`/api/trips/${tripId}/itinerary/${itineraryId}/ranges`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ start_day: start, end_day: end, range_name: name || null }),
+            body: JSON.stringify({ start_day: startDay, end_day: endDay, range_name: name || null }),
         });
-        if (res.ok) { await loadTree(); }
+        if (res.ok) { setAddingRange(false); await loadTree(); }
+        else { const e = await res.json().catch(() => ({})); alert(e.error || 'Could not add range.'); }
+    }
+
+    async function deleteThisItinerary() {
+        const label = meta?.title || (meta?.mode === 'range' ? 'this range plan' : 'this day plan');
+        const warn = finalized
+            ? `Delete ${label}? It's your finalized plan — its costs will be removed from your forecast. This can't be undone.`
+            : `Delete ${label}? This can't be undone.`;
+        if (!confirm(warn)) return;
+        const res = await fetch(`/api/trips/${tripId}/itinerary/${itineraryId}`, { method: 'DELETE' });
+        if (res.ok) {
+            onSwitch(0);        // invalidate active id; parent re-picks finalized/first or shows entry screen
+            onListChanged();    // reload list — empty ⇒ ItineraryView shows the day/range choice again
+        } else {
+            alert('Could not delete this itinerary.');
+        }
     }
 
     function fmtDate(d: string | null) {
@@ -186,40 +229,55 @@ function ItineraryEditor({
         return <p className="mt-6 text-[13px]" style={{ color: 'var(--ink-faint)' }}>Loading…</p>;
     }
 
-    const buckets = tree.buckets;
+    const buckets = localBuckets;
     const current = buckets[activeBucket] ?? null;
+    const isRange = tree.mode === 'range';
 
     return (
         <div>
-            {/* Plan switcher + finalize (only when ≥2 itineraries) */}
-            {itineraries.length > 1 && (
-                <div className="flex items-center gap-2 flex-wrap mb-4 rounded-xl px-4 py-3"
-                    style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
-                    <span className="text-[12px]" style={{ color: 'var(--ink-faint)' }}>Plan</span>
-                    {itineraries.map((i) => (
-                        <button key={i.itinerary_id} onClick={() => onSwitch(i.itinerary_id)}
-                            className="text-[12px] px-3 py-1.5 rounded-full"
-                            style={{
-                                background: i.itinerary_id === itineraryId ? 'color-mix(in srgb, var(--accent) 18%, transparent)' : 'transparent',
-                                color: i.itinerary_id === itineraryId ? 'var(--accent-deep)' : 'var(--ink-soft)',
-                                border: `1px solid ${i.itinerary_id === itineraryId ? 'transparent' : 'var(--border)'}`,
-                                fontWeight: i.itinerary_id === itineraryId ? 600 : 400,
-                            }}>
-                            {i.title || (i.mode === 'range' ? 'Range plan' : 'Day plan')}
-                            {i.is_finalized === 1 ? ' ✓' : ''}
-                        </button>
-                    ))}
-                    {!finalized && (
+            {/* Plan bar: mode label · delete · (switcher/finalize when ≥2) */}
+            <div className="flex items-center gap-2 flex-wrap mb-4 rounded-xl px-4 py-3"
+                style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+                {itineraries.length > 1 ? (
+                    <>
+                        <span className="text-[12px]" style={{ color: 'var(--ink-faint)' }}>Plan</span>
+                        {itineraries.map((i) => (
+                            <button key={i.itinerary_id} onClick={() => onSwitch(i.itinerary_id)}
+                                className="text-[12px] px-3 py-1.5 rounded-full"
+                                style={{
+                                    background: i.itinerary_id === itineraryId ? 'color-mix(in srgb, var(--accent) 18%, transparent)' : 'transparent',
+                                    color: i.itinerary_id === itineraryId ? 'var(--accent-deep)' : 'var(--ink-soft)',
+                                    border: `1px solid ${i.itinerary_id === itineraryId ? 'transparent' : 'var(--border)'}`,
+                                    fontWeight: i.itinerary_id === itineraryId ? 600 : 400, cursor: 'pointer',
+                                }}>
+                                {i.title || (i.mode === 'range' ? 'Range plan' : 'Day plan')}{i.is_finalized === 1 ? ' ✓' : ''}
+                            </button>
+                        ))}
+                    </>
+                ) : (
+                    <span className="text-[12px]" style={{ color: 'var(--ink-faint)' }}>
+                        {isRange ? 'Range-based plan' : 'Day-based plan'}
+                        {finalized && <span style={{ color: 'var(--success)' }}> · finalized</span>}
+                    </span>
+                )}
+
+                <div className="ml-auto flex items-center gap-3">
+                    {itineraries.length > 1 && !finalized && (
                         <button onClick={async () => {
                             await fetch(`/api/trips/${tripId}/itinerary/${itineraryId}/finalize`, { method: 'POST' });
                             onListChanged();
-                        }} className="tw-link ml-auto text-[12px] font-semibold" style={{ color: 'var(--success)' }}>
+                        }} className="tw-link text-[12px] font-semibold" style={{ color: 'var(--success)' }}>
                             Finalize this plan →
                         </button>
                     )}
-                    {finalized && <span className="ml-auto text-[12px]" style={{ color: 'var(--success)' }}>✓ Finalized · feeds your forecast</span>}
+                    {itineraries.length > 1 && finalized && (
+                        <span className="text-[12px]" style={{ color: 'var(--success)' }}>✓ Finalized · feeds your forecast</span>
+                    )}
+                    <button onClick={deleteThisItinerary} className="tw-link text-[12px]" style={{ color: 'var(--danger)' }}>
+                        🗑 Delete &amp; start over
+                    </button>
                 </div>
-            )}
+            </div>
 
             <div className="flex gap-5 items-start" style={{ flexWrap: 'wrap' }}>
                 {/* ── Left rail: navigator ── */}
@@ -229,44 +287,58 @@ function ItineraryEditor({
                             {tree.mode === 'day' ? `${buckets.length} days` : `${buckets.length} ${buckets.length === 1 ? 'stretch' : 'stretches'}`}
                         </div>
                         {buckets.map((b, i) => (
-                            <button key={b.kind === 'day' ? `d${b.day_id}` : `r${b.day_range_id}`}
-                                onClick={() => setActiveBucket(i)}
-                                className="w-full text-left px-4 py-3"
+                            <div key={b.kind === 'day' ? `d${b.day_id}` : `r${b.day_range_id}`}
+                                className="flex items-stretch"
                                 style={{
                                     borderTop: i === 0 ? 'none' : '1px solid var(--divider)',
                                     background: i === activeBucket ? 'color-mix(in srgb, var(--accent) 8%, transparent)' : 'transparent',
-                                    cursor: 'pointer',
                                 }}>
-                                <div className="flex items-center gap-2">
-                                    <span className="text-[14px] font-semibold" style={{ color: i === activeBucket ? 'var(--accent-deep)' : 'var(--ink)' }}>
-                                        {bucketLabel(b)}
-                                    </span>
-                                    {b.status === 'confirmed' && <span className="text-[10px]" style={{ color: 'var(--success)' }}>✓</span>}
-                                </div>
-                                <div className="text-[11.5px] mt-0.5" style={{ color: 'var(--ink-faint)' }}>{bucketSub(b)}</div>
-                            </button>
+                                <button onClick={() => setActiveBucket(i)}
+                                    className="flex-1 text-left px-4 py-3" style={{ cursor: 'pointer', background: 'transparent', border: 'none' }}>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-[14px] font-semibold" style={{ color: i === activeBucket ? 'var(--accent-deep)' : 'var(--ink)' }}>
+                                            {bucketLabel(b)}
+                                        </span>
+                                        {b.status === 'confirmed' && <span className="text-[10px]" style={{ color: 'var(--success)' }}>✓</span>}
+                                    </div>
+                                    <div className="text-[11.5px] mt-0.5" style={{ color: 'var(--ink-faint)' }}>{bucketSub(b)}</div>
+                                </button>
+
+                                {/* Reorder arrows — range mode only */}
+                                {isRange && buckets.length > 1 && (
+                                    <div className="flex flex-col justify-center pr-2" style={{ gap: 2 }}>
+                                        <button onClick={() => moveRange(i, -1)} disabled={i === 0}
+                                            title="Move up" className="tw-link"
+                                            style={{ fontSize: 11, lineHeight: 1, color: i === 0 ? 'var(--border)' : 'var(--ink-soft)', cursor: i === 0 ? 'default' : 'pointer' }}>▲</button>
+                                        <button onClick={() => moveRange(i, 1)} disabled={i === buckets.length - 1}
+                                            title="Move down" className="tw-link"
+                                            style={{ fontSize: 11, lineHeight: 1, color: i === buckets.length - 1 ? 'var(--border)' : 'var(--ink-soft)', cursor: i === buckets.length - 1 ? 'default' : 'pointer' }}>▼</button>
+                                    </div>
+                                )}
+                            </div>
                         ))}
 
-                        {/* Range-mode: unplanned days affordance */}
-                        {tree.mode === 'range' && unplanned.length > 0 && (
+                        {/* Range-mode: unplanned days + inline add-range form */}
+                        {isRange && (
                             <div className="px-4 py-3" style={{ borderTop: '1px dashed var(--border)' }}>
-                                <div className="text-[11.5px]" style={{ color: 'var(--ink-faint)' }}>
-                                    Unplanned: {formatDayGaps(unplanned)}
-                                </div>
-                                <button onClick={addRange} className="tw-link text-[12px] font-semibold mt-1" style={{ color: 'var(--accent-deep)' }}>
-                                    + add a range
-                                </button>
-                            </div>
-                        )}
-                        {tree.mode === 'range' && buckets.length === 0 && unplanned.length === 0 && (
-                            <div className="px-4 py-3">
-                                <button onClick={addRange} className="tw-link text-[12px] font-semibold" style={{ color: 'var(--accent-deep)' }}>+ add a range</button>
+                                {unplanned.length > 0 && (
+                                    <div className="text-[11.5px] mb-1" style={{ color: 'var(--ink-faint)' }}>
+                                        Unplanned: {formatDayGaps(unplanned)}
+                                    </div>
+                                )}
+                                {!addingRange ? (
+                                    <button onClick={() => setAddingRange(true)} className="tw-link text-[12px] font-semibold" style={{ color: 'var(--accent-deep)' }}>
+                                        + add a range
+                                    </button>
+                                ) : (
+                                    <AddRangeForm unplanned={unplanned} onAdd={submitRange} onCancel={() => setAddingRange(false)} />
+                                )}
                             </div>
                         )}
                     </div>
                 </div>
 
-                {/* ── Right: bucket panel (activity list arrives in Part 3) ── */}
+                {/* ── Right: bucket panel ── */}
                 <div style={{ flex: 1, minWidth: 320 }}>
                     {current ? (
                         <BucketPanel
@@ -314,6 +386,32 @@ function BucketPanel({
     const [completing, setCompleting] = useState(false);
     const [groupPreview, setGroupPreview] = useState<{ category_name: string; activity_ids: number[] }[] | null>(null);
     const isConfirmed = bucket.status === 'confirmed';
+    const [editingTitle, setEditingTitle] = useState(false);
+    const [titleDraft, setTitleDraft] = useState('');
+    const [startDraft, setStartDraft] = useState('');
+    const [endDraft, setEndDraft] = useState('');
+
+    async function saveTitle() {
+        const value = titleDraft.trim();
+        if (bucket.kind === 'day') {
+            await fetch(`/api/trips/${tripId}/itinerary/${itineraryId}/days/${bucket.day_id}`, {
+                method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ title: value || null }),
+            });
+        } else {
+            const s = parseInt(startDraft, 10), e = parseInt(endDraft, 10);
+            if (!Number.isFinite(s) || !Number.isFinite(e) || s < 1 || e < s) {
+                alert('Enter a valid day range (end on or after start).');
+                return;
+            }
+            await fetch(`/api/trips/${tripId}/itinerary/${itineraryId}/ranges/${bucket.day_range_id}`, {
+                method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ range_name: value || null, start_day: s, end_day: e }),
+            });
+        }
+        setEditingTitle(false);
+        onChanged();
+    }
 
     // "Complete" = flip this bucket to confirmed (opens the emit gate) AND run the
     // grouping pass. For now grouping is user-invoked/manual; the AI pass slots in here later.
@@ -423,9 +521,46 @@ function BucketPanel({
             {/* header */}
             <div className="flex items-center gap-3 px-5 py-4" style={{ borderBottom: '1px solid var(--divider)' }}>
                 <div>
-                    <div className="text-[16px] font-bold" style={{ color: 'var(--ink)' }}>
-                        {bucket.kind === 'day' ? (bucket.title || `Day ${bucket.day_number}`) : (bucket.range_name || `Days ${bucket.start_day}–${bucket.end_day}`)}
-                    </div>
+                    {editingTitle ? (
+                        <div className="flex flex-col gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
+                                <input value={titleDraft} onChange={(e) => setTitleDraft(e.target.value)} autoFocus
+                                    onKeyDown={(e) => { if (e.key === 'Enter') saveTitle(); if (e.key === 'Escape') setEditingTitle(false); }}
+                                    placeholder={bucket.kind === 'day' ? `Day ${bucket.day_number}` : `Name (e.g. "Sea Days")`}
+                                    className="text-[16px] font-bold"
+                                    style={{ background: 'var(--surface)', border: '1px solid var(--accent)', borderRadius: 8, padding: '2px 8px', color: 'var(--ink)', minWidth: 220 }} />
+                                {bucket.kind === 'range' && (
+                                    <>
+                                        <span className="text-[12px]" style={{ color: 'var(--ink-faint)' }}>Days</span>
+                                        <input type="number" value={startDraft} onChange={(e) => setStartDraft(e.target.value)}
+                                            style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: '4px 6px', color: 'var(--ink)', width: 52, fontSize: 13 }} title="Start day" />
+                                        <span className="text-[12px]" style={{ color: 'var(--ink-faint)' }}>to</span>
+                                        <input type="number" value={endDraft} onChange={(e) => setEndDraft(e.target.value)}
+                                            style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: '4px 6px', color: 'var(--ink)', width: 52, fontSize: 13 }} title="End day" />
+                                    </>
+                                )}
+                            </div>
+                            <div className="flex gap-2">
+                                <button onClick={saveTitle} className="tw-btn text-[12px] font-semibold px-3 py-1 rounded-lg" style={{ background: 'var(--accent)', color: 'var(--accent-ink)' }}>Save</button>
+                                <button onClick={() => setEditingTitle(false)} className="tw-link text-[12px]" style={{ color: 'var(--ink-soft)' }}>Cancel</button>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="flex items-center gap-2">
+                            <span className="text-[16px] font-bold" style={{ color: 'var(--ink)' }}>
+                                {bucket.kind === 'day' ? (bucket.title || `Day ${bucket.day_number}`) : (bucket.range_name || `Days ${bucket.start_day}–${bucket.end_day}`)}
+                            </span>
+                            <button
+                                onClick={() => {
+                                    setTitleDraft(bucket.kind === 'day' ? (bucket.title ?? '') : (bucket.range_name ?? ''));
+                                    if (bucket.kind === 'range') { setStartDraft(String(bucket.start_day ?? '')); setEndDraft(String(bucket.end_day ?? '')); }
+                                    setEditingTitle(true);
+                                }}
+                                className="tw-link text-[12px]" style={{ color: 'var(--accent-deep)' }}>
+                                ✎ Edit {bucket.kind === 'range' ? 'range' : 'name'}
+                            </button>
+                        </div>
+                    )}
                     <div className="text-[12px] mt-0.5" style={{ color: 'var(--ink-soft)' }}>
                         {bucket.kind === 'day'
                             ? `Day ${bucket.day_number}`
@@ -770,6 +905,52 @@ function ItineraryDraftPanel({
                     </div>
                 )
             )}
+        </div>
+    );
+}
+
+// ── Inline add-range form (replaces the browser prompt) ──────────────────────
+function AddRangeForm({
+    unplanned, onAdd, onCancel,
+}: {
+    unplanned: number[];
+    onAdd: (startDay: number, endDay: number, name: string) => void;
+    onCancel: () => void;
+}) {
+    // Default bounds = first contiguous unplanned span.
+    const defStart = unplanned[0] ?? 1;
+    let defEnd = defStart;
+    for (const d of unplanned) { if (d === defEnd + 1) defEnd = d; else if (d > defStart) break; }
+
+    const [start, setStart] = useState(String(defStart));
+    const [end, setEnd] = useState(String(defEnd));
+    const [name, setName] = useState('');
+
+    const field: React.CSSProperties = {
+        background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--ink)',
+        borderRadius: 8, padding: '5px 7px', fontSize: 13, width: '100%',
+    };
+    const s = parseInt(start, 10), e = parseInt(end, 10);
+    const valid = Number.isFinite(s) && Number.isFinite(e) && s >= 1 && e >= s;
+
+    return (
+        <div className="mt-1 p-2.5 rounded-lg" style={{ border: '1px solid var(--accent)', background: 'color-mix(in srgb, var(--accent) 4%, var(--surface))' }}>
+            <input value={name} onChange={(ev) => setName(ev.target.value)} autoFocus
+                placeholder='Name (e.g. "Sea Days", "Tokyo")' style={{ ...field, marginBottom: 6 }} />
+            <div className="flex items-center gap-2 mb-2">
+                <label className="text-[11px]" style={{ color: 'var(--ink-faint)' }}>Days</label>
+                <input type="number" value={start} onChange={(ev) => setStart(ev.target.value)} style={{ ...field, width: 56 }} title="Start day" />
+                <span className="text-[12px]" style={{ color: 'var(--ink-faint)' }}>to</span>
+                <input type="number" value={end} onChange={(ev) => setEnd(ev.target.value)} style={{ ...field, width: 56 }} title="End day" />
+            </div>
+            <div className="flex justify-end gap-2">
+                <button onClick={onCancel} className="tw-link text-[12px] px-2 py-1" style={{ color: 'var(--ink-soft)' }}>Cancel</button>
+                <button onClick={() => valid && onAdd(s, e, name.trim())} disabled={!valid}
+                    className="tw-btn text-[12px] font-semibold px-3 py-1 rounded-lg"
+                    style={{ background: 'var(--accent)', color: 'var(--accent-ink)', opacity: valid ? 1 : 0.5 }}>
+                    Add range
+                </button>
+            </div>
         </div>
     );
 }
