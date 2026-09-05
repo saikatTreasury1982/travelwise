@@ -281,7 +281,13 @@ function ItineraryEditor({
                 </div>
             </div>
 
-            <SpendRhythm tripId={tripId} title="Itinerary spend by day" />
+            <SpendRhythm
+                tripId={tripId}
+                onSelectBucket={(key) => {
+                    const idx = buckets.findIndex((b) => (b.day_id != null ? `d${b.day_id}` : `r${b.day_range_id}`) === key);
+                    if (idx >= 0) setActiveBucket(idx);
+                }}
+            />
 
             {/* view switcher */}
             <div className="flex items-center gap-1.5 mb-4">
