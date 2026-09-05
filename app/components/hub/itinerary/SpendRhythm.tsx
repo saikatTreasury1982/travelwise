@@ -25,9 +25,10 @@ function catColor(name: string | null): string {
 /** Spend-by-day/range view (base currency). Collapsible (default collapsed).
  *  ≤14 segments → proportional category-tinted ribbon + insight; more → top-5 fallback.
  *  Self-fetches from tripId; onSelectBucket makes segments click-to-navigate. */
-export default function SpendRhythm({ tripId, onSelectBucket }: {
+export default function SpendRhythm({ tripId, onSelectBucket, title = 'Spend by day' }: {
     tripId: number;
     onSelectBucket?: (key: string) => void;
+    title?: string;
 }) {
     const [buckets, setBuckets] = useState<SpendBucket[]>([]);
     const [ccy, setCcy] = useState('');
@@ -62,7 +63,7 @@ export default function SpendRhythm({ tripId, onSelectBucket }: {
             {/* header — always visible, click to toggle (fetches on expand) */}
             <button onClick={toggle} className="tw-legs w-full flex items-center gap-3 px-4 py-3"
                 style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}>
-                <span className="text-[13px] font-semibold" style={{ color: 'var(--ink)' }}>Spend by day</span>
+                <span className="text-[13px] font-semibold" style={{ color: 'var(--ink)' }}>{title}</span>
                 {open && loaded && hasSpend && (
                     <span className="text-[12px]" style={{ color: 'var(--ink-faint)' }}>{fmt(total)} total</span>
                 )}

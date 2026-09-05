@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 import type { ActivityRow, CategoryRow } from '@/app/lib/services/itinerary-service';
 import CurrencyCombobox from '@/app/components/ui/CurrencyCombobox';
 import SpendRhythm from './SpendRhythm';
+import ActivityAssistSheet from './ActivityAssistSheet';
 
 interface Traveler { traveler_id: number; traveler_name: string; is_primary: number; is_cost_sharer: number; is_active: number; }
 interface Currency { currency_code: string; currency_name: string; currency_symbol?: string | null; }
@@ -67,6 +68,16 @@ export default function ItineraryView({ tripId, currencies, baseCurrency, tripSt
     }
 
     // ── Empty state: entry choice ─────────────────────────────────────────────
+    const tripDays = (() => {
+        try {
+            const a = new Date(tripStart + 'T00:00:00').getTime();
+            const b = new Date(tripEnd + 'T00:00:00').getTime();
+            if (isNaN(a) || isNaN(b) || b < a) return 0;
+            return Math.round((b - a) / 86400000) + 1;
+        } catch { return 0; }
+    })();
+    const longTrip = tripDays > 14;
+
     if (itineraries.length === 0) {
         return (
             <div className="rounded-2xl p-8" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
@@ -80,13 +91,31 @@ export default function ItineraryView({ tripId, currencies, baseCurrency, tripSt
                     <div className="rounded-xl p-5" style={{ border: '1px solid var(--border)' }}>
                         <div className="text-[15px] font-semibold mb-1" style={{ color: 'var(--ink)' }}>Build it myself</div>
                         <p className="text-[12.5px] mb-4" style={{ color: 'var(--ink-soft)' }}>Add your own activities. Group them later — the co-pilot can tidy them for you.</p>
+                        {longTrip && (
+                            <p className="text-[12px] mb-2 px-2.5 py-1.5 rounded-lg" style={{ background: 'color-mix(in srgb, var(--accent) 8%, transparent)', color: 'var(--accent-deep)' }}>
+                                Your trip is {tripDays} days — <b>day-ranges</b> keep long trips manageable (group by stretches like “Tokyo” or “Sea days”). Recommended.
+                            </p>
+                        )}
                         <div className="flex gap-2">
-                            <button disabled={creating} onClick={() => createItinerary('day', 'manual')}
-                                className="tw-btn text-[13px] font-semibold px-4 py-2 rounded-lg"
-                                style={{ background: 'var(--accent)', color: 'var(--accent-ink)' }}>Day by day</button>
-                            <button disabled={creating} onClick={() => createItinerary('range', 'manual')}
-                                className="tw-btn text-[13px] font-semibold px-4 py-2 rounded-lg"
-                                style={{ background: 'var(--surface)', color: 'var(--ink-soft)', border: '1px solid var(--border)' }}>By day-ranges</button>
+                            {longTrip ? (
+                                <>
+                                    <button disabled={creating} onClick={() => createItinerary('range', 'manual')}
+                                        className="tw-btn text-[13px] font-semibold px-4 py-2 rounded-lg"
+                                        style={{ background: 'var(--accent)', color: 'var(--accent-ink)' }}>By day-ranges ✓</button>
+                                    <button disabled={creating} onClick={() => createItinerary('day', 'manual')}
+                                        className="tw-btn text-[13px] font-semibold px-4 py-2 rounded-lg"
+                                        style={{ background: 'var(--surface)', color: 'var(--ink-soft)', border: '1px solid var(--border)' }}>Day by day</button>
+                                </>
+                            ) : (
+                                <>
+                                    <button disabled={creating} onClick={() => createItinerary('day', 'manual')}
+                                        className="tw-btn text-[13px] font-semibold px-4 py-2 rounded-lg"
+                                        style={{ background: 'var(--accent)', color: 'var(--accent-ink)' }}>Day by day</button>
+                                    <button disabled={creating} onClick={() => createItinerary('range', 'manual')}
+                                        className="tw-btn text-[13px] font-semibold px-4 py-2 rounded-lg"
+                                        style={{ background: 'var(--surface)', color: 'var(--ink-soft)', border: '1px solid var(--border)' }}>By day-ranges</button>
+                                </>
+                            )}
                         </div>
                     </div>
 
@@ -140,7 +169,22 @@ function ItineraryEditor({
     const [unplanned, setUnplanned] = useState<number[]>([]);
     const [addingRange, setAddingRange] = useState(false);
     const [localBuckets, setLocalBuckets] = useState<BucketNode[]>([]);
-    const [view, setView] = useState<'list' | 'timeline' | 'story'>('list');
+    const [view, setView] = useState<'list' | 'timeline'>('list');
+    const [assistFor, setAssistFor] = useState<{ activityId: number; name: string } | null>(null);
+    const [assistCounts, setAssistCounts] = useState<Record<number, number>>({});
+
+    const loadAssistCounts = useCallback(async () => {
+        try {
+            const r = await fetch(`/api/trips/${tripId}/itinerary/${itineraryId}/assist-counts`);
+            const d = r.ok ? await r.json() : { counts: {} };
+            // API returns { [activityId]: { total, byType } }; we only need total for the badge.
+            const totals: Record<number, number> = {};
+            for (const [aid, c] of Object.entries(d.counts ?? {})) totals[Number(aid)] = (c as any).total ?? 0;
+            setAssistCounts(totals);
+        } catch { /* badges are non-critical */ }
+    }, [tripId, itineraryId]);
+
+    useEffect(() => { loadAssistCounts(); }, [loadAssistCounts]);
 
     const loadTree = useCallback(async () => {
         setLoading(true);
@@ -295,7 +339,6 @@ function ItineraryEditor({
                 {([
                     { k: 'list', label: 'List' },
                     { k: 'timeline', label: 'Timeline' },
-                    { k: 'story', label: 'Story' },
                 ] as const).map((v) => (
                     <button key={v.k} onClick={() => setView(v.k)}
                         className="text-[12px] px-3 py-1.5 rounded-lg"
@@ -376,11 +419,8 @@ function ItineraryEditor({
                             <TimelinePanel
                                 key={current.kind === 'day' ? `d${current.day_id}` : `r${current.day_range_id}`}
                                 bucket={current} roster={roster} baseCurrency={baseCurrency}
-                            />
-                        ) : view === 'story' ? (
-                            <StoryPanel
-                                key={current.kind === 'day' ? `d${current.day_id}` : `r${current.day_range_id}`}
-                                bucket={current} baseCurrency={baseCurrency}
+                                assistCounts={assistCounts}
+                                onOpenAssist={(activityId, name) => setAssistFor({ activityId, name })}
                             />
                         ) : (
                             <BucketPanel
@@ -388,6 +428,8 @@ function ItineraryEditor({
                                 tripId={tripId} itineraryId={itineraryId} bucket={current}
                                 roster={roster} currencies={currencies} baseCurrency={baseCurrency}
                                 onChanged={loadTree}
+                                assistCounts={assistCounts}
+                                onOpenAssist={(activityId, name) => setAssistFor({ activityId, name })}
                             />
                         )
                     ) : (
@@ -399,6 +441,13 @@ function ItineraryEditor({
                     )}
                 </div>
             </div>
+            {assistFor && (
+                <ActivityAssistSheet
+                    tripId={tripId} activityId={assistFor.activityId} activityName={assistFor.name}
+                    onClose={() => setAssistFor(null)}
+                    onChanged={loadAssistCounts}
+                />
+            )}
         </div>
     );
 }
@@ -419,10 +468,12 @@ function formatDayGaps(days: number[]): string {
 }
 
 function BucketPanel({
-    tripId, itineraryId, bucket, roster, currencies, baseCurrency, onChanged,
+    tripId, itineraryId, bucket, roster, currencies, baseCurrency, onChanged, assistCounts, onOpenAssist,
 }: {
     tripId: number; itineraryId: number; bucket: BucketNode;
     roster: Traveler[]; currencies: Currency[]; baseCurrency: string; onChanged: () => void;
+    assistCounts?: Record<number, number>;
+    onOpenAssist?: (activityId: number, name: string) => void;
 }) {
     const [adding, setAdding] = useState(false);
     const [editingId, setEditingId] = useState<number | null>(null);
@@ -660,6 +711,15 @@ function BucketPanel({
                                         )}
                                         <button onClick={() => setEditingId(a.activity_id)} className="tw-link text-[12px]" style={{ color: 'var(--accent-deep)' }}>Edit</button>
                                         <button onClick={() => del(a.activity_id)} className="tw-link text-[12px]" style={{ color: 'var(--ink-faint)' }}>🗑</button>
+                                        {(assistCounts?.[a.activity_id] ?? 0) > 0 ? (
+                                            <button onClick={() => onOpenAssist?.(a.activity_id, a.activity_name)} className="tw-link text-[11px] px-1.5"
+                                                title="Saved help" style={{ color: 'var(--accent-deep)' }}>
+                                                ✨ {assistCounts![a.activity_id]}
+                                            </button>
+                                        ) : (
+                                            <button onClick={() => onOpenAssist?.(a.activity_id, a.activity_name)} className="tw-link text-[13px] px-1"
+                                                title="Ask the co-pilot" style={{ color: 'var(--ink-faint)' }}>✨</button>
+                                        )}
                                     </div>
                                 )
                             ))}
@@ -1000,16 +1060,20 @@ function AddRangeForm({
 
 // ── Timeline view (Concept 2): connected spine, category-coloured nodes ──────
 function catColor(name: string | null): string {
-  if (!name) return 'var(--ink-faint)';
-  let h = 0; for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
-  const P = ['var(--accent-deep)', 'var(--success)', 'var(--danger)',
-    'color-mix(in srgb, var(--accent) 65%, var(--ink-soft))',
-    'color-mix(in srgb, var(--success) 60%, var(--ink-soft))',
-    'color-mix(in srgb, var(--accent-deep) 70%, var(--danger))'];
-  return P[h % P.length];
+    if (!name) return 'var(--ink-faint)';
+    let h = 0; for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+    const P = ['var(--accent-deep)', 'var(--success)', 'var(--danger)',
+        'color-mix(in srgb, var(--accent) 65%, var(--ink-soft))',
+        'color-mix(in srgb, var(--success) 60%, var(--ink-soft))',
+        'color-mix(in srgb, var(--accent-deep) 70%, var(--danger))'];
+    return P[h % P.length];
 }
 
-function TimelinePanel({ bucket, roster, baseCurrency }: { bucket: BucketNode; roster: Traveler[]; baseCurrency: string; }) {
+function TimelinePanel({ bucket, roster, baseCurrency, assistCounts, onOpenAssist }: {
+    bucket: BucketNode; roster: Traveler[]; baseCurrency: string;
+    assistCounts?: Record<number, number>;
+    onOpenAssist?: (activityId: number, name: string) => void;
+}) {
     const nameOf = (id: number) => roster.find((t) => t.traveler_id === id)?.traveler_name ?? '—';
     function resolved(a: ActivityRow): number | null {
         if (a.activity_cost == null) return null;
@@ -1085,6 +1149,11 @@ function TimelinePanel({ bucket, roster, baseCurrency }: { bucket: BucketNode; r
                                     ) : (
                                         <span className="ml-auto text-[12px]" style={{ color: 'var(--ink-faint)' }}>free</span>
                                     )}
+                                    <button onClick={() => onOpenAssist?.(a.activity_id, a.activity_name)}
+                                        className="tw-link text-[12px]" title={(assistCounts?.[a.activity_id] ?? 0) > 0 ? 'Saved help' : 'Ask'}
+                                        style={{ color: (assistCounts?.[a.activity_id] ?? 0) > 0 ? 'var(--accent-deep)' : 'var(--ink-faint)' }}>
+                                        {(assistCounts?.[a.activity_id] ?? 0) > 0 ? `✨ ${assistCounts![a.activity_id]}` : '✨'}
+                                    </button>
                                 </div>
                                 <div className="text-[12px] mt-0.5 flex items-center gap-2 flex-wrap" style={{ color: 'var(--ink-faint)' }}>
                                     {!allTimed && a.start_time && <span style={{ fontVariantNumeric: 'tabular-nums' }}>{a.start_time}</span>}
@@ -1100,15 +1169,6 @@ function TimelinePanel({ bucket, roster, baseCurrency }: { bucket: BucketNode; r
                     );
                 })}
             </div>
-        </div>
-    );
-}
-
-// Stub — Story view (Part 3).
-function StoryPanel({ bucket, baseCurrency }: { bucket: BucketNode; baseCurrency: string }) {
-    return (
-        <div className="rounded-2xl p-8 text-center" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
-            <p className="text-[14px]" style={{ color: 'var(--ink-soft)' }}>Story view — coming next.</p>
         </div>
     );
 }
