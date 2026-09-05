@@ -369,15 +369,27 @@ function ItineraryEditor({
                     </div>
                 </div>
 
-                {/* ── Right: bucket panel ── */}
+                {/* ── Right: bucket panel, per selected view ── */}
                 <div style={{ flex: 1, minWidth: 320 }}>
                     {current ? (
-                        <BucketPanel
-                            key={current.kind === 'day' ? `d${current.day_id}` : `r${current.day_range_id}`}
-                            tripId={tripId} itineraryId={itineraryId} bucket={current}
-                            roster={roster} currencies={currencies} baseCurrency={baseCurrency}
-                            onChanged={loadTree}
-                        />
+                        view === 'timeline' ? (
+                            <TimelinePanel
+                                key={current.kind === 'day' ? `d${current.day_id}` : `r${current.day_range_id}`}
+                                bucket={current} roster={roster} baseCurrency={baseCurrency}
+                            />
+                        ) : view === 'story' ? (
+                            <StoryPanel
+                                key={current.kind === 'day' ? `d${current.day_id}` : `r${current.day_range_id}`}
+                                bucket={current} baseCurrency={baseCurrency}
+                            />
+                        ) : (
+                            <BucketPanel
+                                key={current.kind === 'day' ? `d${current.day_id}` : `r${current.day_range_id}`}
+                                tripId={tripId} itineraryId={itineraryId} bucket={current}
+                                roster={roster} currencies={currencies} baseCurrency={baseCurrency}
+                                onChanged={loadTree}
+                            />
+                        )
                     ) : (
                         <div className="rounded-2xl p-8 text-center" style={{ background: 'var(--surface)', border: '1px dashed var(--border)' }}>
                             <p className="text-[14px]" style={{ color: 'var(--ink-soft)' }}>
@@ -986,8 +998,16 @@ function AddRangeForm({
     );
 }
 
-// ── Timeline view (Concept 1): activities on a vertical time axis ────────────
-const CAT_COLORS = ['var(--accent)', '#B4432B', '#2E7D5B', '#7C5CBF', '#3B7BB0', '#6E675E'];
+// ── Timeline view (Concept 2): connected spine, category-coloured nodes ──────
+function catColor(name: string | null): string {
+  if (!name) return 'var(--ink-faint)';
+  let h = 0; for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  const P = ['var(--accent-deep)', 'var(--success)', 'var(--danger)',
+    'color-mix(in srgb, var(--accent) 65%, var(--ink-soft))',
+    'color-mix(in srgb, var(--success) 60%, var(--ink-soft))',
+    'color-mix(in srgb, var(--accent-deep) 70%, var(--danger))'];
+  return P[h % P.length];
+}
 
 function TimelinePanel({ bucket, roster, baseCurrency }: { bucket: BucketNode; roster: Traveler[]; baseCurrency: string; }) {
     const nameOf = (id: number) => roster.find((t) => t.traveler_id === id)?.traveler_name ?? '—';
@@ -995,21 +1015,23 @@ function TimelinePanel({ bucket, roster, baseCurrency }: { bucket: BucketNode; r
         if (a.activity_cost == null) return null;
         return a.cost_type === 'per_person' ? a.activity_cost * (a.headcount && a.headcount > 0 ? a.headcount : 1) : a.activity_cost;
     }
-    const catIndex = new Map<number, number>();
-    bucket.categories.forEach((c, i) => catIndex.set(c.category_id, i));
-    const colorFor = (a: ActivityRow) => a.category_id == null ? 'var(--ink-soft)' : CAT_COLORS[(catIndex.get(a.category_id) ?? 0) % CAT_COLORS.length];
-    const catName = (a: ActivityRow) => a.category_id == null ? '' : (bucket.categories.find((c) => c.category_id === a.category_id)?.category_name ?? '');
+    const colorFor = (a: ActivityRow) => catColor(catName(a));
+    function catName(a: ActivityRow): string | null {
+        if (a.category_id == null) return null;
+        return bucket.categories.find((c) => c.category_id === a.category_id)?.category_name ?? null;
+    }
 
-    const sorted = [...bucket.activities].sort((x, y) => {
-        if (x.start_time && y.start_time) return x.start_time.localeCompare(y.start_time);
-        if (x.start_time) return -1;
-        if (y.start_time) return 1;
-        return x.display_order - y.display_order;
-    });
+    // Sort by time ONLY if every activity has a start_time; else keep manual order.
+    const allTimed = bucket.activities.length > 0 && bucket.activities.every((a) => !!a.start_time);
+    const items = allTimed
+        ? [...bucket.activities].sort((x, y) => (x.start_time ?? '').localeCompare(y.start_time ?? ''))
+        : [...bucket.activities].sort((x, y) => x.display_order - y.display_order);
+
     const activeTotal = bucket.activities.filter((a) => a.is_active === 1).reduce((s, a) => s + (resolved(a) ?? 0), 0);
 
     return (
         <div className="rounded-2xl overflow-hidden" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+            {/* header */}
             <div className="flex items-center gap-3 px-5 py-4" style={{ borderBottom: '1px solid var(--divider)' }}>
                 <div>
                     <div className="text-[16px] font-bold" style={{ color: 'var(--ink)' }}>
@@ -1022,41 +1044,56 @@ function TimelinePanel({ bucket, roster, baseCurrency }: { bucket: BucketNode; r
                 </div>
                 {activeTotal > 0 && (
                     <div className="ml-auto text-right">
-                        <div className="text-[18px] font-extrabold" style={{ color: 'var(--accent-deep)' }}>{baseCurrency} {activeTotal.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
+                        <div className="text-[17px] font-extrabold" style={{ color: 'var(--accent-deep)' }}>{baseCurrency} {activeTotal.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
                         <div className="text-[11px]" style={{ color: 'var(--ink-faint)' }}>{bucket.activities.length} {bucket.activities.length === 1 ? 'activity' : 'activities'}</div>
                     </div>
                 )}
             </div>
 
-            <div className="px-5 py-4">
-                {sorted.length === 0 && (
+            {/* spine */}
+            <div className="px-5 py-5">
+                {items.length === 0 && (
                     <p className="text-[13px] text-center py-6" style={{ color: 'var(--ink-faint)' }}>Nothing planned yet. Switch to List view to add activities.</p>
                 )}
-                {sorted.map((a) => {
+                {items.map((a, i) => {
                     const cost = resolved(a);
-                    const color = colorFor(a);
-                    const light = color === 'var(--accent)';
+                    const dot = colorFor(a);
+                    const isLast = i === items.length - 1;
+                    const cat = catName(a);
+                    const payers = a.bearer_traveler_ids.map(nameOf);
                     return (
-                        <div key={a.activity_id} className="flex gap-3 items-stretch" style={{ minHeight: 48, opacity: a.is_active === 1 ? 1 : 0.5 }}>
-                            <div className="text-[11px] pt-1 text-right flex-shrink-0" style={{ width: 46, color: 'var(--ink-faint)', fontVariantNumeric: 'tabular-nums' }}>
-                                {a.start_time || '—'}
+                        <div key={a.activity_id} className="flex gap-3" style={{ paddingBottom: isLast ? 0 : 18, opacity: a.is_active === 1 ? 1 : 0.5 }}>
+                            {/* time column — only rendered when the day is fully timed */}
+                            {allTimed && (
+                                <div className="text-[12px] text-right flex-shrink-0" style={{ width: 48, color: 'var(--ink-faint)', paddingTop: 1, fontVariantNumeric: 'tabular-nums' }}>
+                                    {a.start_time}
+                                </div>
+                            )}
+                            {/* node + connecting line */}
+                            <div className="relative flex-shrink-0 flex justify-center" style={{ width: 14 }}>
+                                <div style={{ width: 11, height: 11, borderRadius: '50%', background: dot, border: '2px solid var(--surface)', boxShadow: `0 0 0 1.5px ${dot}`, marginTop: 3, zIndex: 1 }} />
+                                {!isLast && <div style={{ position: 'absolute', top: 3, bottom: -18, width: 2, background: 'var(--divider)' }} />}
                             </div>
-                            <div className="flex-1" style={{ borderLeft: '2px solid var(--divider)', paddingLeft: 14, paddingBottom: 10 }}>
-                                <div className="rounded-[10px] px-3 py-2.5 relative" style={{ background: color, color: light ? 'var(--accent-ink)' : '#fff' }}>
-                                    <div className="text-[13.5px] font-semibold">{a.activity_name}</div>
-                                    <div className="text-[11px]" style={{ opacity: 0.9 }}>
-                                        {catName(a)}{catName(a) && (a.bearer_traveler_ids.length || a.end_time) ? ' · ' : ''}
-                                        {a.end_time ? `until ${a.end_time}` : ''}
-                                        {a.bearer_traveler_ids.length > 0 ? `${a.end_time ? ' · ' : ''}${a.bearer_traveler_ids.map(nameOf).join(', ')}` : ''}
-                                    </div>
-                                    {cost != null && (
-                                        <span className="absolute text-[12px] font-bold" style={{ top: 10, right: 12 }}>
+                            {/* content */}
+                            <div className="flex-1 min-w-0">
+                                <div className="flex items-baseline gap-2">
+                                    <span className="text-[14.5px] font-medium" style={{ color: 'var(--ink)' }}>{a.activity_name}</span>
+                                    {cost != null ? (
+                                        <span className="ml-auto text-[13.5px] font-bold whitespace-nowrap" style={{ color: 'var(--accent-deep)' }}>
                                             {baseCurrency} {cost.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                                            {a.currency_code && a.currency_code !== baseCurrency && (
-                                                <span className="text-[10px] font-normal" style={{ opacity: 0.85 }}> ({a.currency_code} {a.activity_cost})</span>
-                                            )}
                                         </span>
+                                    ) : (
+                                        <span className="ml-auto text-[12px]" style={{ color: 'var(--ink-faint)' }}>free</span>
                                     )}
+                                </div>
+                                <div className="text-[12px] mt-0.5 flex items-center gap-2 flex-wrap" style={{ color: 'var(--ink-faint)' }}>
+                                    {!allTimed && a.start_time && <span style={{ fontVariantNumeric: 'tabular-nums' }}>{a.start_time}</span>}
+                                    {cat && <span>{cat}</span>}
+                                    {payers.length > 0 && <span>{payers.join(', ')}</span>}
+                                    {cost != null && a.currency_code && a.currency_code !== baseCurrency && (
+                                        <span>{a.currency_code} {a.activity_cost}</span>
+                                    )}
+                                    {a.cost_type === 'per_person' && cost != null && <span>({a.headcount || 1}p)</span>}
                                 </div>
                             </div>
                         </div>
