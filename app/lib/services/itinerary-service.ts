@@ -992,16 +992,13 @@ export async function createItineraryFromDraft(
 
 // ── Spend-by-day/range for the FINALIZED itinerary (SpendRhythm chart) ──────
 export interface SpendBucket {
-  key: string;          // stable id for the bar
-  label: string;        // "1" / "Sea Days"
-  sublabel: string;     // date / span
-  amount_base: number;  // total in base currency
+  key: string;
+  label: string;
+  sublabel: string;
+  amount_base: number;
+  category: string | null;   // dominant category name (most base spend); null if ungrouped/none
 }
 
-/** Base-currency spend per day (day mode) or per range (range mode) for the
- *  trip's FINALIZED itinerary. Converts every activity's cost to base (all
- *  activities, not just confirmed — useful while planning). Empty if no
- *  finalized itinerary. */
 export async function getItinerarySpendByDay(ctx: TenantContext, tripId: number): Promise<{ mode: ItineraryMode | null; base_currency: string; buckets: SpendBucket[] }> {
   const base = await getTripBaseCurrency(ctx, tripId);
   const fin = await scopedQuery(
@@ -1013,14 +1010,21 @@ export async function getItinerarySpendByDay(ctx: TenantContext, tripId: number)
 
   const acts = await scopedQuery(
     ctx,
-    `SELECT day_id, day_range_id, activity_cost, currency_code, cost_type, headcount, is_active
+    `SELECT day_id, day_range_id, category_id, activity_cost, currency_code, cost_type, headcount, is_active
      FROM itinerary_activities WHERE {{tenant}} AND itinerary_id = ?`,
     [itineraryId],
   );
 
-  // Convert each active, costed activity to base and sum per bucket id.
+  const catRows = await scopedQuery(
+    ctx, `SELECT category_id, category_name FROM itinerary_categories WHERE {{tenant}} AND itinerary_id = ?`, [itineraryId],
+  );
+  const catName = new Map<number, string>();
+  for (const c of catRows) catName.set(Number(c.category_id), String(c.category_name));
+
   const { convert } = await import('@/app/lib/services/fx');
   const perBucket = new Map<number, number>();
+  const perBucketCat = new Map<number, Map<string, number>>();
+
   for (const a of acts) {
     if (Number(a.is_active ?? 1) !== 1 || a.activity_cost == null) continue;
     const unit = Number(a.activity_cost);
@@ -1031,7 +1035,20 @@ export async function getItinerarySpendByDay(ctx: TenantContext, tripId: number)
     const amt = baseAmount ?? total;
     const bid = mode === 'day' ? Number(a.day_id) : Number(a.day_range_id);
     perBucket.set(bid, (perBucket.get(bid) ?? 0) + amt);
+
+    const cName = a.category_id != null ? (catName.get(Number(a.category_id)) ?? 'Other') : 'Other';
+    if (!perBucketCat.has(bid)) perBucketCat.set(bid, new Map());
+    const cm = perBucketCat.get(bid)!;
+    cm.set(cName, (cm.get(cName) ?? 0) + amt);
   }
+
+  const dominantCat = (bid: number): string | null => {
+    const cm = perBucketCat.get(bid);
+    if (!cm) return null;
+    let best: string | null = null, bestAmt = -1;
+    for (const [name, amt] of cm) { if (amt > bestAmt) { bestAmt = amt; best = name; } }
+    return best === 'Other' ? null : best;
+  };
 
   const buckets: SpendBucket[] = [];
   if (mode === 'day') {
@@ -1040,10 +1057,7 @@ export async function getItinerarySpendByDay(ctx: TenantContext, tripId: number)
     );
     for (const d of days) {
       const id = Number(d.day_id);
-      buckets.push({
-        key: `d${id}`, label: String(d.day_number),
-        sublabel: String(d.day_date), amount_base: perBucket.get(id) ?? 0,
-      });
+      buckets.push({ key: `d${id}`, label: String(d.day_number), sublabel: String(d.day_date), amount_base: perBucket.get(id) ?? 0, category: dominantCat(id) });
     }
   } else {
     const ranges = await scopedQuery(
@@ -1052,9 +1066,8 @@ export async function getItinerarySpendByDay(ctx: TenantContext, tripId: number)
     for (const r of ranges) {
       const id = Number(r.day_range_id);
       buckets.push({
-        key: `r${id}`,
-        label: r.range_name ? String(r.range_name) : `Days ${r.start_day}–${r.end_day}`,
-        sublabel: `Days ${r.start_day}–${r.end_day}`, amount_base: perBucket.get(id) ?? 0,
+        key: `r${id}`, label: r.range_name ? String(r.range_name) : `Days ${r.start_day}–${r.end_day}`,
+        sublabel: `Days ${r.start_day}–${r.end_day}`, amount_base: perBucket.get(id) ?? 0, category: dominantCat(id),
       });
     }
   }

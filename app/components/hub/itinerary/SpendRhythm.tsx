@@ -25,59 +25,64 @@ function catColor(name: string | null): string {
 /** Spend-by-day/range view (base currency). Collapsible (default collapsed).
  *  ≤14 segments → proportional category-tinted ribbon + insight; more → top-5 fallback.
  *  Self-fetches from tripId; onSelectBucket makes segments click-to-navigate. */
-export default function SpendRhythm({ tripId, onSelectBucket, defaultOpen = false }: {
+export default function SpendRhythm({ tripId, onSelectBucket }: {
     tripId: number;
     onSelectBucket?: (key: string) => void;
-    defaultOpen?: boolean;
 }) {
     const [buckets, setBuckets] = useState<SpendBucket[]>([]);
     const [ccy, setCcy] = useState('');
     const [mode, setMode] = useState<'day' | 'range' | null>(null);
-    const [loading, setLoading] = useState(true);
-    const [open, setOpen] = useState(defaultOpen);
+    const [open, setOpen] = useState(false);
+    const [loaded, setLoaded] = useState(false);   // has the data been fetched at least once?
+    const [loading, setLoading] = useState(false);
 
-    useEffect(() => {
-        let live = true;
-        fetch(`/api/trips/${tripId}/itinerary/spend`).then((r) => r.ok ? r.json() : { buckets: [] })
-            .then((d) => { if (live) { setBuckets(d.buckets ?? []); setCcy(d.base_currency ?? ''); setMode(d.mode ?? null); setLoading(false); } })
-            .catch(() => { if (live) setLoading(false); });
-        return () => { live = false; };
-    }, [tripId]);
-
-    if (loading) return null;
-    const spend = buckets.filter((b) => b.amount_base > 0);
-    if (spend.length === 0) return null;   // nothing costed → hide entirely
+    // Fetch on FIRST expand — and re-fetch on each expand so it's always fresh.
+    async function toggle() {
+        const next = !open;
+        setOpen(next);
+        if (next) {
+            setLoading(true);
+            try {
+                const d = await fetch(`/api/trips/${tripId}/itinerary/spend`).then((r) => r.ok ? r.json() : { buckets: [] });
+                setBuckets(d.buckets ?? []);
+                setCcy(d.base_currency ?? '');
+                setMode(d.mode ?? null);
+                setLoaded(true);
+            } finally { setLoading(false); }
+        }
+    }
 
     const total = buckets.reduce((s, b) => s + b.amount_base, 0);
     const fmt = (n: number) => `${ccy} ${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
     const noun = mode === 'range' ? 'stretches' : 'days';
-    const max = Math.max(...buckets.map((b) => b.amount_base), 1);
+    const hasSpend = buckets.some((b) => b.amount_base > 0);
 
     return (
         <div className="rounded-xl mb-4" style={{ background: 'var(--surface)', border: '1px solid var(--border)', overflow: 'hidden' }}>
-            {/* collapsed header — always visible, click to toggle */}
-            <button onClick={() => setOpen((v) => !v)} className="w-full flex items-center gap-3 px-4 py-3"
+            {/* header — always visible, click to toggle (fetches on expand) */}
+            <button onClick={toggle} className="tw-legs w-full flex items-center gap-3 px-4 py-3"
                 style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}>
                 <span className="text-[13px] font-semibold" style={{ color: 'var(--ink)' }}>Spend by day</span>
-                {!open && (
-                    <div className="flex gap-[2px] items-end" style={{ height: 20, maxWidth: 160, flex: 1 }}>
-                        {buckets.map((b) => (
-                            <div key={b.key} style={{
-                                flex: 1, minWidth: 0,
-                                height: `${Math.max((b.amount_base / max) * 100, b.amount_base > 0 ? 8 : 3)}%`,
-                                background: b.amount_base === max && b.amount_base > 0 ? 'var(--danger)' : 'color-mix(in srgb, var(--accent) 50%, transparent)',
-                                borderRadius: '2px 2px 0 0',
-                            }} />
-                        ))}
-                    </div>
+                {open && loaded && hasSpend && (
+                    <span className="text-[12px]" style={{ color: 'var(--ink-faint)' }}>{fmt(total)} total</span>
                 )}
-                <span className="ml-auto text-[12px]" style={{ color: 'var(--ink-faint)' }}>{fmt(total)} total</span>
-                <span className="text-[12px]" style={{ color: 'var(--ink-faint)' }}>{open ? '▾' : '▸'}</span>
+                <span
+                    className="ml-auto flex items-center justify-center rounded-full"
+                    style={{
+                        width: 22, height: 22, fontSize: 12, lineHeight: 1,
+                        background: 'color-mix(in srgb, var(--accent) 14%, transparent)',
+                        color: 'var(--accent-deep)', transition: 'transform .15s',
+                        transform: open ? 'rotate(90deg)' : 'rotate(0deg)',
+                    }}>▸</span>
             </button>
 
             {open && (
                 <div className="px-4 pb-4">
-                    {buckets.length <= CAP ? (
+                    {loading ? (
+                        <p className="text-[12px] py-3" style={{ color: 'var(--ink-faint)' }}>Loading spend…</p>
+                    ) : !hasSpend ? (
+                        <p className="text-[12px] py-3" style={{ color: 'var(--ink-faint)' }}>No activity costs yet. Add costs and complete a day to see spend here.</p>
+                    ) : buckets.length <= CAP ? (
                         <Ribbon buckets={buckets} total={total} fmt={fmt} onSelectBucket={onSelectBucket} />
                     ) : (
                         <InsightFallback buckets={buckets} total={total} fmt={fmt} count={buckets.length} noun={noun} onSelectBucket={onSelectBucket} />
