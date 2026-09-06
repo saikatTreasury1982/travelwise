@@ -668,6 +668,7 @@ export interface BucketNode {
   display_order: number;
   categories: CategoryRow[];
   activities: ActivityRow[];       // ALL activities in the bucket (grouped + ungrouped); UI buckets by category_id
+  total_base: number;              // sum of active costed activities, converted to base currency
 }
 export interface ItineraryTree {
   itinerary_id: number;
@@ -733,8 +734,24 @@ export async function getItineraryTree(ctx: TenantContext, tripId: number, itine
   );
   if (!it[0]) return null;
   const mode = String(it[0].mode) as ItineraryMode;
-
+  const base = await getTripBaseCurrency(ctx, tripId);
+  const { convert } = await import('@/app/lib/services/fx');
   const bearerMap = await bearersByActivity(ctx, itineraryId);
+
+  // Sum a bucket's active costed activities, each converted to base currency.
+  async function bucketBaseTotal(items: ActivityRow[]): Promise<number> {
+    let sum = 0;
+    for (const a of items) {
+      if (a.is_active !== 1 || a.activity_cost == null) continue;
+      const raw = a.cost_type === 'per_person'
+        ? a.activity_cost * (a.headcount && a.headcount > 0 ? a.headcount : 1)
+        : a.activity_cost;
+      const cur = a.currency_code ?? base;
+      const { baseAmount } = await convert(raw, cur, base);
+      sum += baseAmount ?? raw;
+    }
+    return sum;
+  }
   const cats = await scopedQuery(
     ctx,
     `SELECT category_id, day_id, day_range_id, category_name, description, display_order
@@ -763,6 +780,8 @@ export async function getItineraryTree(ctx: TenantContext, tripId: number, itine
     );
     for (const d of days) {
       const dayId = Number(d.day_id);
+      const activities = acts.filter((x) => Number(x.day_id) === dayId)
+        .map((x) => mapActivity(x, bearerMap.get(Number(x.activity_id)) ?? []));
       buckets.push({
         kind: 'day', day_id: dayId, day_range_id: null,
         day_number: Number(d.day_number), day_date: String(d.day_date),
@@ -770,8 +789,8 @@ export async function getItineraryTree(ctx: TenantContext, tripId: number, itine
         title: d.title == null ? null : String(d.title), description: null,
         status: String(d.status) as PlanStatus, display_order: Number(d.day_number),
         categories: cats.filter((c) => Number(c.day_id) === dayId).map(mapCategory),
-        activities: acts.filter((x) => Number(x.day_id) === dayId)
-          .map((x) => mapActivity(x, bearerMap.get(Number(x.activity_id)) ?? [])),
+        activities,
+        total_base: await bucketBaseTotal(activities),
       });
     }
   } else {
@@ -783,6 +802,8 @@ export async function getItineraryTree(ctx: TenantContext, tripId: number, itine
     );
     for (const r of ranges) {
       const rid = Number(r.day_range_id);
+      const activities = acts.filter((x) => Number(x.day_range_id) === rid)
+        .map((x) => mapActivity(x, bearerMap.get(Number(x.activity_id)) ?? []));
       buckets.push({
         kind: 'range', day_id: null, day_range_id: rid,
         day_number: null, day_date: null,
@@ -792,8 +813,8 @@ export async function getItineraryTree(ctx: TenantContext, tripId: number, itine
         description: r.description == null ? null : String(r.description),
         status: String(r.status) as PlanStatus, display_order: Number(r.display_order ?? 0),
         categories: cats.filter((c) => Number(c.day_range_id) === rid).map(mapCategory),
-        activities: acts.filter((x) => Number(x.day_range_id) === rid)
-          .map((x) => mapActivity(x, bearerMap.get(Number(x.activity_id)) ?? [])),
+        activities,
+        total_base: await bucketBaseTotal(activities),
       });
     }
   }

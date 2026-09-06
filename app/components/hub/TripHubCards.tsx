@@ -107,10 +107,9 @@ export default function TripHubCards({ tripId, travelerCount, stats }: { tripId:
         <div className="flex-grow">
           <div className="text-[14px] font-semibold">Your planning co-pilot</div>
           <div className="text-[12.5px]" style={{ color: 'rgba(245,242,237,0.7)' }}>
-            {travelerCount > 0 ? 'Ready to help plan flights, lodging, and your day-by-day itinerary.' : 'Add your travellers first — then I can help plan and split costs.'}
+                        {travelerCount > 0 ? 'Plan flights, lodging, and your day-by-day itinerary — all in one place.' : 'Add your travellers first to start planning and splitting costs.'}
           </div>
         </div>
-        <Link href="/plan" className="flex-shrink-0 h-[38px] px-4 rounded-[10px] font-bold text-[13px] flex items-center" style={{ background: 'var(--accent)', color: 'var(--accent-ink)' }}>Plan with AI</Link>
       </div>
 
       <h2 className="text-xs font-bold uppercase mb-3" style={{ color: 'var(--accent-deep)', letterSpacing: '0.4px' }}>Plan this trip</h2>

@@ -575,9 +575,7 @@ function BucketPanel({
         if (a.activity_cost == null) return null;
         return a.cost_type === 'per_person' ? a.activity_cost * (a.headcount && a.headcount > 0 ? a.headcount : 1) : a.activity_cost;
     }
-    const bucketTotal = bucket.activities
-        .filter((a) => a.is_active === 1)
-        .reduce((sum, a) => sum + (resolved(a) ?? 0), 0);
+    const bucketTotal = bucket.total_base;
 
     // Group activities: by category_id, with null → "General".
     const cats = bucket.categories;
@@ -1091,7 +1089,7 @@ function TimelinePanel({ bucket, roster, baseCurrency, assistCounts, onOpenAssis
         ? [...bucket.activities].sort((x, y) => (x.start_time ?? '').localeCompare(y.start_time ?? ''))
         : [...bucket.activities].sort((x, y) => x.display_order - y.display_order);
 
-    const activeTotal = bucket.activities.filter((a) => a.is_active === 1).reduce((s, a) => s + (resolved(a) ?? 0), 0);
+    const activeTotal = bucket.total_base;
 
     return (
         <div className="rounded-2xl overflow-hidden" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>

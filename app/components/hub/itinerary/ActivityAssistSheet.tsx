@@ -103,11 +103,10 @@ export default function ActivityAssistSheet({
   const grouped: AssistType[] = ['getting_here', 'food', 'timing', 'tips', 'note'];
 
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(16,14,12,.28)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(16,14,12,.28)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <div onClick={(e) => e.stopPropagation()}
-        className="animate-slide-up"
-        style={{ background: 'var(--surface)', borderRadius: '20px 20px 0 0', width: '100%', maxWidth: 560, maxHeight: '85vh', display: 'flex', flexDirection: 'column', boxShadow: '0 -8px 30px rgba(0,0,0,.18)' }}>
-        <div style={{ width: 36, height: 4, borderRadius: 2, background: 'var(--border)', margin: '10px auto 4px' }} />
+        className="animate-scale-in"
+        style={{ background: 'var(--surface)', borderRadius: 18, width: '100%', maxWidth: 520, maxHeight: '85vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 50px rgba(0,0,0,.24)' }}>
         <div className="px-5 pb-3 flex items-center gap-2" style={{ borderBottom: '1px solid var(--divider)' }}>
           <div className="flex-1 min-w-0">
             <div className="text-[15px] font-bold truncate" style={{ color: 'var(--ink)' }}>{activityName}</div>

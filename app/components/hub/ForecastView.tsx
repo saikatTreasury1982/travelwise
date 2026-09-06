@@ -28,7 +28,7 @@ export default function ForecastView({ forecast }: { forecast: Forecast }) {
       <div className="rounded-2xl p-6" style={{ background: 'var(--panel)', color: 'var(--panel-ink)' }}>
         <div className="text-[13px]" style={{ color: 'rgba(245,242,237,0.7)' }}>Total Estimated Cost</div>
         <div className="text-[34px] font-extrabold mt-1" style={{ letterSpacing: '-0.5px' }}>{money(total_base, base_currency)}</div>
-        <div className="text-[12px] mt-1" style={{ color: 'rgba(245,242,237,0.6)' }}>Base currency: {base_currency} (Primary traveller)</div>
+        <div className="text-[12px] mt-1" style={{ color: 'rgba(245,242,237,0.6)' }}>All costs shown in {base_currency} (your trip's base currency)</div>
       </div>
 
       {/* Breakdown by module */}
