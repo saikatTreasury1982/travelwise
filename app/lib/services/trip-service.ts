@@ -185,7 +185,8 @@ export async function getTripDetail(ctx: TenantContext, tripId: number) {
   const tripRows = await scopedQuery(
     ctx,
     `SELECT trip_id, trip_name, trip_description, start_date, end_date,
-            status_code, trip_budget, budget_currency, created_at, updated_at
+    status_code, trip_budget, budget_currency, created_at, updated_at,
+    cover_image_url, cover_image_credit, cover_image_link
      FROM trips WHERE {{tenant}} AND trip_id = ?`,
     [tripId]
   );
@@ -237,6 +238,9 @@ export async function getTripDetail(ctx: TenantContext, tripId: number) {
     budget_currency: t.budget_currency == null ? null : String(t.budget_currency),
     created_at: t.created_at == null ? null : String(t.created_at),
     updated_at: t.updated_at == null ? null : String(t.updated_at),
+    cover_image_url: t.cover_image_url == null ? null : String(t.cover_image_url),
+    cover_image_credit: t.cover_image_credit == null ? null : String(t.cover_image_credit),
+    cover_image_link: t.cover_image_link == null ? null : String(t.cover_image_link),
     destinations: destRows.map((d) => ({
       destination_id: Number(d.destination_id),
       country: String(d.country),

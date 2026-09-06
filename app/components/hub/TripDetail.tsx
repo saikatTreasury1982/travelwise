@@ -12,6 +12,7 @@ interface Trip {
   trip_id: number; trip_name: string; trip_description: string | null;
   start_date: string; end_date: string; status_code: number | null;
   trip_budget: number | null; budget_currency: string | null;
+  cover_image_url?: string | null; cover_image_credit?: string | null; cover_image_link?: string | null;
   destinations: Array<{ destination_id: number; country: string; city: string | null }>;
   travelers: Array<{
     traveler_id: number; traveler_name: string; relationship: number | null;
@@ -123,29 +124,76 @@ export default function TripDetail({ trip: initial, currencies, hubStats }: { tr
 
   return (
     <div className="px-6 md:px-10 py-8 max-w-[900px] mx-auto">
-      <Link href="/trips" className="text-[13px] font-medium inline-flex items-center gap-1.5 mb-6" style={{ color: 'var(--ink-soft)' }}>
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
-        All trips
-      </Link>
-
       {error && <div className="mb-4 p-3 rounded-lg text-sm" style={{ background: 'var(--danger-bg)', border: '1px solid var(--danger)', color: 'var(--danger)' }}>{error}</div>}
 
-      {/* name — click to edit */}
-      <div className="flex items-start justify-between gap-4 mb-2">
-        {editing === 'name' ? (
-          <div className="flex gap-2 items-center flex-grow">
-            <input value={name} onChange={(e) => setName(e.target.value)} autoFocus style={{ ...inputStyle, fontSize: 28, fontFamily: 'var(--font-display)', flexGrow: 1 }} />
-            <button onClick={() => save({ name }, { trip_name: name })} disabled={saving} className="text-sm font-semibold px-3 py-2 rounded-lg" style={{ background: 'var(--primary)', color: 'var(--primary-ink)' }}>Save</button>
-            <button onClick={() => { setName(trip.trip_name); setEditing(null); }} className="text-sm px-3 py-2" style={{ color: 'var(--ink-soft)' }}>Cancel</button>
+      {trip.cover_image_url && editing !== 'name' ? (
+        /* ===== Immersive hero (photo present, not editing the name) ===== */
+        <div
+          className="relative rounded-[18px] overflow-hidden mb-8 flex flex-col justify-end"
+          style={{
+            minHeight: 230,
+            backgroundImage: `linear-gradient(180deg, rgba(12,9,5,0.15) 0%, rgba(12,9,5,0.05) 40%, rgba(12,9,5,0.80) 100%), url("${trip.cover_image_url}")`,
+            backgroundSize: 'cover',
+            backgroundPosition: 'center 60%',
+          }}
+        >
+          {/* top bar: back + status */}
+          <div className="absolute top-0 left-0 right-0 flex items-center justify-between px-5 py-4 z-10">
+            <Link href="/trips" className="text-[13px] font-medium inline-flex items-center gap-1.5" style={{ color: 'rgba(255,255,255,0.92)' }}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
+              All trips
+            </Link>
+            <div className="flex-shrink-0">
+              <TripStatusControl tripId={trip.trip_id} statusCode={trip.status_code ?? 1} variant="onImage" />
+            </div>
           </div>
-        ) : (
-          <h1 onClick={() => setEditing('name')} style={{ fontFamily: 'var(--font-display)', fontSize: 'clamp(30px,4vw,42px)', lineHeight: 1.05, color: 'var(--ink)', ...editHint }} title="Click to edit">{trip.trip_name}</h1>
-        )}
-        <div className="flex-shrink-0 mt-2">
-          <TripStatusControl tripId={trip.trip_id} statusCode={trip.status_code ?? 1} />
+
+          {/* title + places over the photo */}
+          <div className="relative z-10 px-6 pb-6 pt-16">
+            <h1
+              onClick={() => setEditing('name')}
+              style={{ fontFamily: 'var(--font-display)', fontSize: 'clamp(30px,4vw,42px)', lineHeight: 1.05, color: '#fff', textShadow: '0 2px 18px rgba(0,0,0,0.45)', cursor: 'pointer' }}
+              title="Click to edit"
+            >
+              {trip.trip_name}
+            </h1>
+            {places && <p className="text-[15px] mt-1.5" style={{ color: 'rgba(255,255,255,0.92)', textShadow: '0 1px 8px rgba(0,0,0,0.5)' }}>{places}</p>}
+          </div>
+
+          {/* photo credit */}
+          {trip.cover_image_credit && (
+            <div className="absolute bottom-1.5 right-3 z-10 text-[10px]" style={{ color: 'rgba(255,255,255,0.6)' }}>
+              {trip.cover_image_link ? (
+                <a href={trip.cover_image_link} target="_blank" rel="noopener noreferrer" style={{ color: 'inherit' }}>{trip.cover_image_credit}</a>
+              ) : trip.cover_image_credit}
+            </div>
+          )}
         </div>
-      </div>
-      {places && <p className="text-[15px] mb-6" style={{ color: 'var(--ink-soft)' }}>{places}</p>}
+      ) : (
+        /* ===== Plain header (no photo, or editing the name) ===== */
+        <>
+          <Link href="/trips" className="text-[13px] font-medium inline-flex items-center gap-1.5 mb-6" style={{ color: 'var(--ink-soft)' }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
+            All trips
+          </Link>
+          {/* name — click to edit */}
+          <div className="flex items-start justify-between gap-4 mb-2">
+            {editing === 'name' ? (
+              <div className="flex gap-2 items-center flex-grow">
+                <input value={name} onChange={(e) => setName(e.target.value)} autoFocus style={{ ...inputStyle, fontSize: 28, fontFamily: 'var(--font-display)', flexGrow: 1 }} />
+                <button onClick={() => save({ name }, { trip_name: name })} disabled={saving} className="text-sm font-semibold px-3 py-2 rounded-lg" style={{ background: 'var(--primary)', color: 'var(--primary-ink)' }}>Save</button>
+                <button onClick={() => { setName(trip.trip_name); setEditing(null); }} className="text-sm px-3 py-2" style={{ color: 'var(--ink-soft)' }}>Cancel</button>
+              </div>
+            ) : (
+              <h1 onClick={() => setEditing('name')} style={{ fontFamily: 'var(--font-display)', fontSize: 'clamp(30px,4vw,42px)', lineHeight: 1.05, color: 'var(--ink)', ...editHint }} title="Click to edit">{trip.trip_name}</h1>
+            )}
+            <div className="flex-shrink-0 mt-2">
+              <TripStatusControl tripId={trip.trip_id} statusCode={trip.status_code ?? 1} />
+            </div>
+          </div>
+          {places && <p className="text-[15px] mb-6" style={{ color: 'var(--ink-soft)' }}>{places}</p>}
+        </>
+      )}
 
       {/* key facts */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
