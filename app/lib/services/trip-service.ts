@@ -118,6 +118,9 @@ export async function saveTrip(ctx: TenantContext, input: TripInput): Promise<Sa
     await tx.commit();
     // Every trip always has its primary traveller (the logged-in user).
     await ensurePrimaryTraveler(ctx, tripId);
+    // Pre-warm destination weather so the hub panel is instant on first click.
+    // Fire-and-forget: never blocks trip creation, never throws.
+    prewarmTripWeather(ctx, tripId).catch(() => { });
     return { tripId, name: input.name.trim() };
   } catch (err) {
     await tx.rollback();
@@ -432,4 +435,55 @@ export async function setTripSuspended(
     status_code: TRIP_STATUS.DRAFT,
     end_date: row.end_date == null ? null : String(row.end_date),
   });
+}
+
+/**
+ * Best-effort: compute + cache climate normals for every destination of a trip.
+ * Called fire-and-forget after trip creation (and safe to call again). Any failure
+ * is swallowed — weather is a nicety, never a reason to fail the caller.
+ */
+export async function prewarmTripWeather(ctx: TenantContext, tripId: number): Promise<void> {
+  try {
+    const { getDestinationWeather, weatherKey } = await import('@/app/lib/services/weather');
+
+    const tripRows = await scopedQuery(
+      ctx,
+      `SELECT start_date, end_date FROM trips WHERE {{tenant}} AND trip_id = ? LIMIT 1`,
+      [tripId],
+    );
+    const trip = tripRows[0];
+    if (!trip) return;
+    const startDate = String(trip.start_date);
+    const endDate = String(trip.end_date);
+    const key = weatherKey(startDate, endDate);
+
+    const dests = await scopedQuery(
+      ctx,
+      `SELECT destination_id, city, country, latitude, longitude
+         FROM trip_destinations WHERE {{tenant}} AND trip_id = ?`,
+      [tripId],
+    );
+
+    for (const d of dests) {
+      try {
+        const weather = await getDestinationWeather(
+          {
+            latitude: d.latitude == null ? null : Number(d.latitude),
+            longitude: d.longitude == null ? null : Number(d.longitude),
+            city: d.city == null ? null : String(d.city),
+            country: String(d.country),
+          },
+          startDate,
+          endDate,
+        );
+        if (!weather) continue;
+        await scopedExecute(
+          ctx,
+          `UPDATE trip_destinations SET weather_json = ?, weather_key = ?
+            WHERE {{tenant}} AND trip_id = ? AND destination_id = ?`,
+          [JSON.stringify(weather), key, tripId, Number(d.destination_id)],
+        );
+      } catch { /* one destination failing shouldn't stop the rest */ }
+    }
+  } catch { /* swallow — pre-warm is best-effort */ }
 }
