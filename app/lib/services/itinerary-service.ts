@@ -76,7 +76,7 @@ export async function updateItinerary(
 export async function listItineraries(ctx: TenantContext, tripId: number) {
   const rows = await scopedQuery(
     ctx,
-    `SELECT itinerary_id, mode, title, summary, source, is_finalized, generated_at, created_at
+    `SELECT itinerary_id, mode, title, summary, source, is_finalized, generated_at, created_at, updated_at
      FROM itineraries WHERE {{tenant}} AND trip_id = ?
      ORDER BY is_finalized DESC, itinerary_id DESC`,
     [tripId],
@@ -90,6 +90,7 @@ export async function listItineraries(ctx: TenantContext, tripId: number) {
     is_finalized: Number(r.is_finalized ?? 0),
     generated_at: r.generated_at == null ? null : String(r.generated_at),
     created_at: r.created_at == null ? null : String(r.created_at),
+    updated_at: r.updated_at == null ? null : String(r.updated_at),
   }));
 }
 

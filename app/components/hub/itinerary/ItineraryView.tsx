@@ -18,6 +18,7 @@ interface Props {
 interface ItinListItem {
     itinerary_id: number; mode: 'day' | 'range'; title: string | null;
     summary: string | null; source: string; is_finalized: number;
+    generated_at?: string | null; created_at?: string | null; updated_at?: string | null;
 }
 
 export default function ItineraryView({ tripId, currencies, baseCurrency, tripStart, tripEnd }: Props) {
@@ -26,6 +27,7 @@ export default function ItineraryView({ tripId, currencies, baseCurrency, tripSt
     const [activeId, setActiveId] = useState<number | null>(null);
     const [roster, setRoster] = useState<Traveler[]>([]);
     const [creating, setCreating] = useState(false);
+    const [view, setView] = useState<'list' | 'editor'>('list');
 
     const loadList = useCallback(async () => {
         setLoading(true);
@@ -48,26 +50,28 @@ export default function ItineraryView({ tripId, currencies, baseCurrency, tripSt
 
     useEffect(() => { loadList(); }, [loadList]);
 
-    async function createItinerary(mode: 'day' | 'range', source: 'manual' | 'ai') {
+    async function createItinerary(mode: 'day' | 'range', source: 'manual' | 'ai', title: string, summary?: string) {
         setCreating(true);
         try {
             const res = await fetch(`/api/trips/${tripId}/itinerary`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ mode, source }),
+                body: JSON.stringify({ mode, source, title: title.trim(), summary: summary?.trim() || null }),
             });
             if (res.ok) {
                 const { itinerary_id } = await res.json();
-                setActiveId(itinerary_id);
                 await loadList();
+                setActiveId(itinerary_id);
+                setView('editor');   // jump into the new plan
             }
         } finally { setCreating(false); }
     }
+
+    function openPlan(id: number) { setActiveId(id); setView('editor'); }
 
     if (loading) {
         return <p className="mt-8 text-[13px]" style={{ color: 'var(--ink-faint)' }}>Loading…</p>;
     }
 
-    // ── Empty state: entry choice ─────────────────────────────────────────────
     const tripDays = (() => {
         try {
             const a = new Date(tripStart + 'T00:00:00').getTime();
@@ -78,73 +82,212 @@ export default function ItineraryView({ tripId, currencies, baseCurrency, tripSt
     })();
     const longTrip = tripDays > 14;
 
-    if (itineraries.length === 0) {
+    // ── Editor view: a plan is open ───────────────────────────────────────────
+    if (view === 'editor' && activeId != null) {
         return (
-            <div className="rounded-2xl p-8" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
-                <h2 className="text-[18px] font-semibold mb-1" style={{ color: 'var(--ink)' }}>Start your itinerary</h2>
-                <p className="text-[13px] mb-6" style={{ color: 'var(--ink-soft)' }}>
-                    Plan day by day, or in named stretches (great for cruises or multi-city legs). You can change how it's built while it's still empty.
-                </p>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {/* Build it myself */}
-                    <div className="rounded-xl p-5" style={{ border: '1px solid var(--border)' }}>
-                        <div className="text-[15px] font-semibold mb-1" style={{ color: 'var(--ink)' }}>Build it myself</div>
-                        <p className="text-[12.5px] mb-4" style={{ color: 'var(--ink-soft)' }}>Add your own activities. Group them later — the co-pilot can tidy them for you.</p>
-                        {longTrip && (
-                            <p className="text-[12px] mb-2 px-2.5 py-1.5 rounded-lg" style={{ background: 'color-mix(in srgb, var(--accent) 8%, transparent)', color: 'var(--accent-deep)' }}>
-                                Your trip is {tripDays} days — <b>day-ranges</b> keep long trips manageable (group by stretches like “Tokyo” or “Sea days”). Recommended.
-                            </p>
-                        )}
-                        <div className="flex gap-2">
-                            {longTrip ? (
-                                <>
-                                    <button disabled={creating} onClick={() => createItinerary('range', 'manual')}
-                                        className="tw-btn text-[13px] font-semibold px-4 py-2 rounded-lg"
-                                        style={{ background: 'var(--accent)', color: 'var(--accent-ink)' }}>By day-ranges ✓</button>
-                                    <button disabled={creating} onClick={() => createItinerary('day', 'manual')}
-                                        className="tw-btn text-[13px] font-semibold px-4 py-2 rounded-lg"
-                                        style={{ background: 'var(--surface)', color: 'var(--ink-soft)', border: '1px solid var(--border)' }}>Day by day</button>
-                                </>
-                            ) : (
-                                <>
-                                    <button disabled={creating} onClick={() => createItinerary('day', 'manual')}
-                                        className="tw-btn text-[13px] font-semibold px-4 py-2 rounded-lg"
-                                        style={{ background: 'var(--accent)', color: 'var(--accent-ink)' }}>Day by day</button>
-                                    <button disabled={creating} onClick={() => createItinerary('range', 'manual')}
-                                        className="tw-btn text-[13px] font-semibold px-4 py-2 rounded-lg"
-                                        style={{ background: 'var(--surface)', color: 'var(--ink-soft)', border: '1px solid var(--border)' }}>By day-ranges</button>
-                                </>
-                            )}
-                        </div>
-                    </div>
-
-                    {/* Let AI draft — placeholder until the draft door is built */}
-                    <div className="rounded-xl p-5" style={{ border: '1px dashed var(--border)', opacity: 0.75 }}>
-                        <div className="text-[15px] font-semibold mb-1" style={{ color: 'var(--ink)' }}>✦ Let AI draft it</div>
-                        <p className="text-[12.5px] mb-4" style={{ color: 'var(--ink-soft)' }}>The co-pilot proposes a full day-by-day plan with activities and estimated costs — coming soon.</p>
-                        <button disabled className="text-[13px] font-semibold px-4 py-2 rounded-lg"
-                            style={{ background: 'color-mix(in srgb, var(--ink) 6%, transparent)', color: 'var(--ink-faint)' }}>Coming soon</button>
-                    </div>
-                </div>
-            </div>
+            <ItineraryEditor
+                tripId={tripId}
+                itineraryId={activeId}
+                itineraries={itineraries}
+                onSwitch={openPlan}
+                onListChanged={loadList}
+                onBackToList={() => setView('list')}
+                roster={roster}
+                currencies={currencies}
+                baseCurrency={baseCurrency}
+                tripStart={tripStart}
+                tripEnd={tripEnd}
+            />
         );
     }
 
-    // ── Has itinerary(ies): render the active one ─────────────────────────────
+    // ── Landing: create + list of itineraries (always shown otherwise) ─────────
     return (
-        <ItineraryEditor
-            tripId={tripId}
-            itineraryId={activeId!}
+        <ItineraryLanding
             itineraries={itineraries}
-            onSwitch={setActiveId}
-            onListChanged={loadList}
-            roster={roster}
-            currencies={currencies}
-            baseCurrency={baseCurrency}
-            tripStart={tripStart}
-            tripEnd={tripEnd}
+            longTrip={longTrip}
+            tripDays={tripDays}
+            creating={creating}
+            onCreate={createItinerary}
+            onOpen={openPlan}
+            onRenamed={loadList}
+            tripId={tripId}
         />
+    );
+}
+
+function ItineraryLanding({
+    itineraries, longTrip, tripDays, creating, onCreate, onOpen, onRenamed, tripId,
+}: {
+    itineraries: ItinListItem[];
+    longTrip: boolean; tripDays: number; creating: boolean;
+    onCreate: (mode: 'day' | 'range', source: 'manual' | 'ai', title: string, summary?: string) => void | Promise<void>;
+    onOpen: (id: number) => void;
+    onRenamed: () => void;
+    tripId: number;
+}) {
+    const [title, setTitle] = useState('');
+    const [summary, setSummary] = useState('');
+    const canCreate = title.trim().length > 0 && !creating;
+
+    const fmt = (d?: string | null) => {
+        if (!d) return '—';
+        try { return new Date(d.includes('T') ? d : d + 'Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); }
+        catch { return '—'; }
+    };
+
+    return (
+        <div className="flex flex-col gap-6">
+            {/* ── Create a new plan ── */}
+            <div className="rounded-2xl p-6" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+                <h2 className="text-[17px] font-semibold mb-1" style={{ color: 'var(--ink)' }}>Create a plan</h2>
+                <p className="text-[12.5px] mb-4" style={{ color: 'var(--ink-soft)' }}>
+                    Give it a name, then choose how it's built. You can keep several plans and finalize the one that feeds your forecast.
+                </p>
+
+                {/* title (required) + summary (optional) */}
+                <div className="flex flex-col gap-2.5 mb-4 max-w-[520px]">
+                    <input
+                        value={title} onChange={(e) => setTitle(e.target.value)}
+                        placeholder="Plan name — e.g. “Family cruise” or “Tokyo core days”"
+                        className="text-[14px] px-3 py-2.5 rounded-lg" style={{ background: 'var(--canvas)', border: '1px solid var(--border)', color: 'var(--ink)', outline: 'none' }}
+                    />
+                    <textarea
+                        value={summary} onChange={(e) => setSummary(e.target.value)}
+                        placeholder="Short summary (optional) — what this plan is about, who it's for, anything to remember."
+                        rows={3}
+                        className="text-[13px] px-3 py-2 rounded-lg resize-y" style={{ background: 'var(--canvas)', border: '1px solid var(--border)', color: 'var(--ink)', outline: 'none', minHeight: 68, fontFamily: 'inherit', lineHeight: 1.45 }}
+                    />
+                </div>
+
+                {longTrip && (
+                    <p className="text-[12px] mb-3 px-2.5 py-1.5 rounded-lg inline-block" style={{ background: 'color-mix(in srgb, var(--accent) 8%, transparent)', color: 'var(--accent-deep)' }}>
+                        Your trip is {tripDays} days — <b>day-ranges</b> keep long trips manageable. Recommended.
+                    </p>
+                )}
+
+                <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-[12.5px]" style={{ color: 'var(--ink-soft)' }}>Build:</span>
+                    <button disabled={!canCreate} onClick={() => onCreate('day', 'manual', title, summary)}
+                        className="tw-btn text-[13px] font-semibold px-4 py-2 rounded-lg"
+                        style={{ background: longTrip ? 'var(--surface)' : 'var(--accent)', color: longTrip ? 'var(--ink-soft)' : 'var(--accent-ink)', border: longTrip ? '1px solid var(--border)' : 'none', opacity: canCreate ? 1 : 0.5, cursor: canCreate ? 'pointer' : 'not-allowed' }}>
+                        Day by day
+                    </button>
+                    <button disabled={!canCreate} onClick={() => onCreate('range', 'manual', title, summary)}
+                        className="tw-btn text-[13px] font-semibold px-4 py-2 rounded-lg"
+                        style={{ background: longTrip ? 'var(--accent)' : 'var(--surface)', color: longTrip ? 'var(--accent-ink)' : 'var(--ink-soft)', border: longTrip ? 'none' : '1px solid var(--border)', opacity: canCreate ? 1 : 0.5, cursor: canCreate ? 'pointer' : 'not-allowed' }}>
+                        By day-ranges
+                    </button>
+                    {!title.trim() && <span className="text-[11.5px]" style={{ color: 'var(--ink-faint)' }}>Name your plan to continue</span>}
+                    <span className="text-[11.5px] ml-1 px-2 py-1 rounded-md" style={{ background: 'color-mix(in srgb, var(--ink) 5%, transparent)', color: 'var(--ink-faint)' }}>✦ Let AI draft — coming soon</span>
+                </div>
+            </div>
+
+            {/* ── Existing itineraries ── */}
+            {itineraries.length > 0 && (
+                <div>
+                    <h3 className="text-xs font-bold uppercase mb-3" style={{ color: 'var(--accent-deep)', letterSpacing: '0.4px' }}>
+                        Your plans · {itineraries.length}
+                    </h3>
+                    <div className="flex flex-col gap-2.5">
+                        {itineraries.map((it) => (
+                            <ItineraryListRow key={it.itinerary_id} it={it} tripId={tripId} onOpen={onOpen} onRenamed={onRenamed} fmt={fmt} />
+                        ))}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
+function ItineraryListRow({
+    it, tripId, onOpen, onRenamed, fmt,
+}: {
+    it: ItinListItem; tripId: number; onOpen: (id: number) => void; onRenamed: () => void; fmt: (d?: string | null) => string;
+}) {
+    const [renaming, setRenaming] = useState(false);
+    const [t, setT] = useState(it.title ?? '');
+    const [s, setS] = useState(it.summary ?? '');
+    const [busy, setBusy] = useState(false);
+
+    function startRename(e: React.MouseEvent) {
+        e.stopPropagation();
+        setT(it.title ?? ''); setS(it.summary ?? '');
+        setRenaming(true);
+    }
+
+    async function saveRename() {
+        if (!t.trim() || busy) return;
+        setBusy(true);
+        try {
+            await fetch(`/api/trips/${tripId}/itinerary/${it.itinerary_id}`, {
+                method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ title: t.trim(), summary: s.trim() || null }),
+            });
+            onRenamed();
+        } finally { setBusy(false); setRenaming(false); }
+    }
+
+    const isAI = it.source === 'ai';
+    return (
+        <div className="rounded-xl p-4 flex items-center gap-3 transition-transform hover:-translate-y-0.5"
+            style={{ background: 'var(--surface)', border: `1px solid ${it.is_finalized ? 'var(--success)' : 'var(--border)'}`, cursor: renaming ? 'default' : 'pointer' }}
+            onClick={() => { if (!renaming) onOpen(it.itinerary_id); }}>
+            {/* mode badge */}
+            <span className="text-[11px] font-bold px-2.5 py-1 rounded-md flex-shrink-0"
+                style={{ background: 'color-mix(in srgb, var(--accent) 14%, transparent)', color: 'var(--accent-deep)' }}>
+                {it.mode === 'range' ? 'RANGE' : 'DAY'}
+            </span>
+            <div className="flex-grow min-w-0">
+                {renaming ? (
+                    <div onClick={(e) => e.stopPropagation()} className="flex flex-col gap-2">
+                        <input
+                            value={t} onChange={(e) => setT(e.target.value)} autoFocus
+                            placeholder="Plan name"
+                            className="text-[15px] font-semibold px-2.5 py-2 rounded-md w-full"
+                            style={{ background: 'var(--canvas)', border: '1px solid var(--accent)', color: 'var(--ink)', outline: 'none' }}
+                        />
+                        <textarea
+                            value={s} onChange={(e) => setS(e.target.value)}
+                            placeholder="Summary (optional)"
+                            rows={2}
+                            className="text-[13px] px-2.5 py-2 rounded-md w-full resize-y"
+                            style={{ background: 'var(--canvas)', border: '1px solid var(--border)', color: 'var(--ink)', outline: 'none', minHeight: 52, fontFamily: 'inherit', lineHeight: 1.45 }}
+                        />
+                        <div className="flex items-center gap-2">
+                            <button onClick={saveRename} disabled={!t.trim() || busy}
+                                className="tw-btn text-[12.5px] font-semibold px-3.5 py-1.5 rounded-lg"
+                                style={{ background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', opacity: (!t.trim() || busy) ? 0.5 : 1, cursor: (!t.trim() || busy) ? 'not-allowed' : 'pointer' }}>
+                                {busy ? 'Saving…' : 'Save'}
+                            </button>
+                            <button onClick={() => setRenaming(false)} disabled={busy}
+                                className="text-[12.5px] px-3 py-1.5 rounded-lg" style={{ color: 'var(--ink-soft)' }}>
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+                ) : (
+                    <>
+                        <div className="flex items-center gap-2">
+                            <span className="text-[15px] font-semibold truncate" style={{ color: 'var(--ink)' }}>
+                                {it.title || (it.mode === 'range' ? 'Untitled range plan' : 'Untitled day plan')}
+                            </span>
+                            {isAI && <span className="text-[10.5px] font-semibold px-1.5 py-0.5 rounded" style={{ background: 'color-mix(in srgb, var(--accent) 12%, transparent)', color: 'var(--accent-deep)' }}>✦ AI</span>}
+                            {it.is_finalized === 1 && <span className="text-[11px] font-semibold" style={{ color: 'var(--success)' }}>✓ Finalized · feeds forecast</span>}
+                        </div>
+                        {it.summary && <div className="text-[12.5px] truncate mt-0.5" style={{ color: 'var(--ink-soft)' }}>{it.summary}</div>}
+                        <div className="text-[11.5px] mt-1" style={{ color: 'var(--ink-faint)' }}>Created {fmt(it.created_at)} · Updated {fmt(it.updated_at)}</div>
+                    </>
+                )}
+            </div>
+            {!renaming && (
+                <button onClick={startRename}
+                    className="text-[12px] px-2.5 py-1 rounded-md flex-shrink-0" style={{ color: 'var(--ink-soft)' }}>
+                    Rename
+                </button>
+            )}
+            {!renaming && <span className="text-[16px] flex-shrink-0" style={{ color: 'var(--ink-faint)' }}>›</span>}
+        </div>
     );
 }
 
@@ -155,11 +298,11 @@ import type { ItineraryTree, BucketNode } from '@/app/lib/services/itinerary-ser
 // NOTE: type-only import; if your bundler complains, inline the shapes instead.
 
 function ItineraryEditor({
-    tripId, itineraryId, itineraries, onSwitch, onListChanged,
+    tripId, itineraryId, itineraries, onSwitch, onListChanged, onBackToList,
     roster, currencies, baseCurrency, tripStart, tripEnd,
 }: {
     tripId: number; itineraryId: number; itineraries: ItinListItem[];
-    onSwitch: (id: number) => void; onListChanged: () => void;
+    onSwitch: (id: number) => void; onListChanged: () => void; onBackToList: () => void;
     roster: Traveler[]; currencies: Currency[]; baseCurrency: string;
     tripStart: string; tripEnd: string;
 }) {
@@ -281,7 +424,30 @@ function ItineraryEditor({
 
     return (
         <div>
-            {/* Plan bar: mode label · delete · (switcher/finalize when ≥2) */}
+            {/* Back to list + Finalize — primary itinerary controls */}
+            <div className="flex items-center gap-3 mb-4 flex-wrap">
+                <button onClick={onBackToList} className="tw-link text-[13px] font-medium inline-flex items-center gap-1.5" style={{ color: 'var(--ink-soft)' }}>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
+                    All plans
+                </button>
+                <div className="ml-auto flex items-center gap-3">
+                    {finalized ? (
+                        <span className="text-[12.5px] font-semibold inline-flex items-center gap-1.5" style={{ color: 'var(--success)' }}>
+                            ✓ Finalized · feeds your forecast
+                        </span>
+                    ) : (
+                        <button onClick={async () => {
+                            await fetch(`/api/trips/${tripId}/itinerary/${itineraryId}/finalize`, { method: 'POST' });
+                            onListChanged();
+                        }} className="tw-btn text-[13px] font-semibold px-4 py-2 rounded-lg"
+                            style={{ background: 'var(--success)', color: '#fff', border: 'none' }}>
+                            Finalize this plan →
+                        </button>
+                    )}
+                </div>
+            </div>
+
+            {/* Plan bar: mode label · delete · (switcher when ≥2) */}
             <div className="flex items-center gap-2 flex-wrap mb-4 rounded-xl px-4 py-3"
                 style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
                 {itineraries.length > 1 ? (
@@ -308,17 +474,6 @@ function ItineraryEditor({
                 )}
 
                 <div className="ml-auto flex items-center gap-3">
-                    {itineraries.length > 1 && !finalized && (
-                        <button onClick={async () => {
-                            await fetch(`/api/trips/${tripId}/itinerary/${itineraryId}/finalize`, { method: 'POST' });
-                            onListChanged();
-                        }} className="tw-link text-[12px] font-semibold" style={{ color: 'var(--success)' }}>
-                            Finalize this plan →
-                        </button>
-                    )}
-                    {itineraries.length > 1 && finalized && (
-                        <span className="text-[12px]" style={{ color: 'var(--success)' }}>✓ Finalized · feeds your forecast</span>
-                    )}
                     <button onClick={deleteThisItinerary} className="tw-link text-[12px]" style={{ color: 'var(--danger)' }}>
                         🗑 Delete &amp; start over
                     </button>
