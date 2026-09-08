@@ -193,7 +193,9 @@ export default async function TripModulePage({ params }: { params: Promise<{ id:
           <h1 className="mb-2" style={{ fontFamily: 'var(--font-display)', fontSize: 'clamp(28px,4vw,38px)', color: 'var(--ink)' }}>Itinerary</h1>
           <p className="text-[14px] mb-6" style={{ color: 'var(--ink-soft)' }}>Plan your days — add activities, group them, and only the finalized plan feeds your forecast.</p>
           <ItineraryView tripId={tripId} currencies={currencies} baseCurrency={baseCurrency}
-            tripStart={trip.start_date} tripEnd={trip.end_date} />
+            tripStart={trip.start_date} tripEnd={trip.end_date}
+            tripBudget={trip.trip_budget ?? null}
+            travelerCount={trip.travelers.filter((t) => t.is_active).length} />
         </div>
       </div>
     );
