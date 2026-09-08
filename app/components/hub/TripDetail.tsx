@@ -43,7 +43,7 @@ function Chevron({ open }: { open: boolean }) {
   );
 }
 
-export default function TripDetail({ trip: initial, currencies, hubStats }: { trip: Trip; currencies: Currency[]; hubStats: HubStats }) {
+export default function TripDetail({ trip: initial, currencies, hubStats, climateInterested }: { trip: Trip; currencies: Currency[]; hubStats: HubStats; climateInterested: boolean }) {
   const router = useRouter();
   const [trip, setTrip] = useState(initial);
   const [editing, setEditing] = useState<string | null>(null);
@@ -287,7 +287,7 @@ export default function TripDetail({ trip: initial, currencies, hubStats }: { tr
               </div>
             )}
             {/* Premium climate teaser — value-led, one-click interest capture */}
-            {trip.destinations.length > 0 && <ClimateTeaser tripId={trip.trip_id} />}
+            {trip.destinations.length > 0 && <ClimateTeaser tripId={trip.trip_id} climateInterested={climateInterested} />}
             {/* addingDest form continues below */}
             {addingDest && (
               <div className="mt-3 rounded-xl p-4" style={{ background: 'var(--surface)', border: '1px solid var(--accent)' }}>

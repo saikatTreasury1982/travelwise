@@ -2,18 +2,8 @@
 'use client';
 import { useState, useEffect } from 'react';
 
-export default function ClimateTeaser({ tripId }: { tripId: number }) {
+export default function ClimateTeaser({ tripId, climateInterested }: { tripId: number; climateInterested: boolean }) {
   const [state, setState] = useState<'loading' | 'idle' | 'saving' | 'done'>('loading');
-
-  // On mount: has this USER already registered interest? (user-level, not per-trip)
-  useEffect(() => {
-    let alive = true;
-    fetch('/api/feature-interest?feature=climate_insights')
-      .then((r) => r.ok ? r.json() : { interested: false })
-      .then((d) => { if (alive) setState(d.interested ? 'done' : 'idle'); })
-      .catch(() => { if (alive) setState('idle'); });
-    return () => { alive = false; };
-  }, []);
 
   async function notifyMe() {
     if (state !== 'idle') return;

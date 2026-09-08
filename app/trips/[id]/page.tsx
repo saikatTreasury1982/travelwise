@@ -10,6 +10,7 @@ import { getChecklistStats } from '@/app/lib/services/checklist-service';
 import { getFlightCounts } from '@/app/lib/services/flight-service';
 import { getLodgingCounts } from '@/app/lib/services/lodging-service';
 import { getItineraryCounts } from '@/app/lib/services/itinerary-service';
+import { hasFeatureInterest } from '@/app/lib/services/feature-interest-service';
 
 export default async function TripDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -25,6 +26,9 @@ export default async function TripDetailPage({ params }: { params: Promise<{ id:
   const firstName = users[0]?.first_name ?? 'traveller';
 
   const trip = await getTripDetail(ctx, tripId);
+
+  const climateInterested = await hasFeatureInterest(ctx, 'climate_insights');
+
   if (!trip) notFound();
 
   const currencies = (await rawQuery(
@@ -68,7 +72,7 @@ export default async function TripDetailPage({ params }: { params: Promise<{ id:
   return (
     <div style={{ background: 'var(--canvas)', minHeight: '100vh' }}>
       <TopNav firstName={firstName} active="trips" />
-      <TripDetail trip={trip} currencies={currencies} hubStats={hubStats} />
+      <TripDetail trip={trip} currencies={currencies} hubStats={hubStats} climateInterested={climateInterested} />
     </div>
   );
 }
