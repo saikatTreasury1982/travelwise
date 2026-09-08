@@ -308,6 +308,7 @@ type Bucket = { dayId: number; rangeId?: undefined } | { dayId?: undefined; rang
 export async function createActivity(
   ctx: TenantContext, tripId: number, itineraryId: number,
   bucket: Bucket, input: ActivityInput, bearerTravelerIds?: number[],
+  opts: { skipSync?: boolean; eligible?: number[] } = {},
 ): Promise<number> {
   const dayId = bucket.dayId ?? null;
   const rangeId = bucket.rangeId ?? null;
@@ -346,8 +347,10 @@ export async function createActivity(
   const activityId = Number(idRows[0].activity_id);
 
   // Default bearers to all trip cost-sharers unless caller specified.
-  const ids = bearerTravelerIds ?? (await defaultCostSharerIds(ctx, tripId));
-  await setActivityBearers(ctx, tripId, activityId, ids);   // this also re-syncs the expense
+  const ids = bearerTravelerIds ?? opts.eligible ?? (await defaultCostSharerIds(ctx, tripId));
+  await setActivityBearers(ctx, tripId, activityId, ids, {
+    skipSync: opts.skipSync, itineraryId, eligible: opts.eligible ?? ids,
+  });
 
   return activityId;
 }
@@ -408,15 +411,19 @@ async function defaultCostSharerIds(ctx: TenantContext, tripId: number): Promise
 /** Replace an activity's bearers (cost-sharers only), then re-sync its expense. */
 export async function setActivityBearers(
   ctx: TenantContext, tripId: number, activityId: number, travelerIds: number[],
+  opts: { skipSync?: boolean; itineraryId?: number; eligible?: number[] } = {},
 ): Promise<void> {
-  const owns = await scopedQuery(
-    ctx, `SELECT itinerary_id FROM itinerary_activities WHERE {{tenant}} AND trip_id = ? AND activity_id = ? LIMIT 1`,
-    [tripId, activityId],
-  );
-  if (owns.length === 0) throw new Error('Activity not found.');
-  const itineraryId = Number(owns[0].itinerary_id);
+  let itineraryId = opts.itineraryId;
+  if (itineraryId == null) {
+    const owns = await scopedQuery(
+      ctx, `SELECT itinerary_id FROM itinerary_activities WHERE {{tenant}} AND trip_id = ? AND activity_id = ? LIMIT 1`,
+      [tripId, activityId],
+    );
+    if (owns.length === 0) throw new Error('Activity not found.');
+    itineraryId = Number(owns[0].itinerary_id);
+  }
 
-  const eligible = new Set(await defaultCostSharerIds(ctx, tripId));
+  const eligible = new Set(opts.eligible ?? await defaultCostSharerIds(ctx, tripId));
   const ids = [...new Set(travelerIds)].filter((id) => eligible.has(id));
 
   await scopedExecute(ctx, `DELETE FROM itinerary_activity_bearers WHERE {{tenant}} AND activity_id = ?`, [activityId]);
@@ -425,7 +432,9 @@ export async function setActivityBearers(
       activity_id: activityId, traveler_id: tid, itinerary_id: itineraryId,
     });
   }
-  await syncExpenseForActivity(ctx, tripId, activityId);
+  // Skip the expense reconciler during bulk draft import — a non-finalized,
+  // all-'planning' itinerary emits nothing, so per-activity sync is wasted work.
+  if (!opts.skipSync) await syncExpenseForActivity(ctx, tripId, activityId);
 }
 
 // ── Drag-sort (display_order) ────────────────────────────────────────────────
@@ -980,7 +989,7 @@ export async function createItineraryFromDraft(
       headcount: a.headcount ?? null,
       is_active: true, notes: a.notes ?? null,
       category_id: categoryId,
-    }, defaultBearers);
+    }, defaultBearers, { skipSync: true, eligible: defaultBearers });
   }
 
   if (draft.mode === 'day') {

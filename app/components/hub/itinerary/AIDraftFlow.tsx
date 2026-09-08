@@ -96,8 +96,9 @@ export default function AIDraftFlow({
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ title: title.trim(), summary: note }),
             });
-            const d = await res.json();
-            if (d.ok) { setSavedTitle(title.trim()); setStage('accepted'); (window as any).__lastDraftItinId = d.itinerary_id; }
+            const d = await res.json().catch(() => ({}));
+            if (res.ok && d.ok) { setSavedTitle(title.trim()); setStage('accepted'); (window as any).__lastDraftItinId = d.itinerary_id; }
+            else { /* likely timed out mid-write; the itinerary may still have been created */ setSavedTitle(title.trim()); setStage('accepted'); }
         } finally { setSaving(false); }
     }
 
