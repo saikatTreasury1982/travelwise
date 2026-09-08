@@ -1,9 +1,8 @@
-// app/components/hub/ClimateTeaser.tsx
 'use client';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 
 export default function ClimateTeaser({ tripId, climateInterested }: { tripId: number; climateInterested: boolean }) {
-  const [state, setState] = useState<'loading' | 'idle' | 'saving' | 'done'>('loading');
+  const [state, setState] = useState<'idle' | 'saving' | 'done'>(climateInterested ? 'done' : 'idle');
 
   async function notifyMe() {
     if (state !== 'idle') return;
@@ -13,18 +12,13 @@ export default function ClimateTeaser({ tripId, climateInterested }: { tripId: n
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ feature: 'climate_insights', tripId }),
       });
-      if (!res.ok) throw new Error('failed');
+      if (!res.ok) throw new Error();
       setState('done');
-    } catch {
-      setState('idle'); // let them retry; don't falsely show success
-    }
+    } catch { setState('idle'); }
   }
 
-  // While checking, render nothing (avoids a flash of the wrong state).
-  if (state === 'loading') return null;
-
   return (
-    <div className="flex items-center gap-3.5 rounded-2xl px-4 py-3.5 mt-3"
+    <div className="flex items-center gap-3.5 rounded-2xl px-4 py-3.5 mb-5"
       style={{ background: 'color-mix(in srgb, var(--accent) 7%, transparent)', border: '1px solid var(--accent)' }}>
       <span className="flex-shrink-0 w-9 h-9 rounded-[10px] flex items-center justify-center text-[18px]"
         style={{ background: 'color-mix(in srgb, var(--accent) 22%, transparent)' }}>🌤️</span>

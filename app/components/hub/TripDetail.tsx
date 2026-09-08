@@ -286,8 +286,6 @@ export default function TripDetail({ trip: initial, currencies, hubStats, climat
                 ))}
               </div>
             )}
-            {/* Premium climate teaser — value-led, one-click interest capture */}
-            {trip.destinations.length > 0 && <ClimateTeaser tripId={trip.trip_id} climateInterested={climateInterested} />}
             {/* addingDest form continues below */}
             {addingDest && (
               <div className="mt-3 rounded-xl p-4" style={{ background: 'var(--surface)', border: '1px solid var(--accent)' }}>
@@ -318,6 +316,9 @@ export default function TripDetail({ trip: initial, currencies, hubStats, climat
           <TravelersSection tripId={trip.trip_id} travelers={trip.travelers} currencies={currencies} />
         )}
       </section>
+
+      {/* Premium climate teaser — always visible, revenue-related, above the hub */}
+      {trip.destinations.length > 0 && <ClimateTeaser tripId={trip.trip_id} climateInterested={climateInterested} />}
 
       {/* Plan-this-trip module cards + AI strip (ADR-010 hub) */}
       <TripHubCards tripId={trip.trip_id} travelerCount={trip.travelers.length} stats={hubStats} />
