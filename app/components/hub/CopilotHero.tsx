@@ -1,11 +1,19 @@
 // app/components/hub/CopilotHero.tsx
 'use client';
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 
-export default function CopilotHero({ firstName, onStart }: { firstName: string; onStart: (prompt: string) => void }) {
+export default function CopilotHero({ firstName, onStart }: { firstName: string; onStart?: (prompt: string) => void }) {
+  const router = useRouter();
   const [prompt, setPrompt] = useState('');
 
-  function start() { onStart(prompt.trim()); }
+  function start() {
+    const text = prompt.trim();
+    if (onStart) { onStart(text); return; }
+    // Fallback for any page that renders the hero without a panel handler
+    // (e.g. the retained /dashboard reference page): send to My Trips.
+    router.push('/trips');
+  }
 
   return (
     <div className="relative overflow-hidden rounded-[22px] p-8 md:p-10 mb-8"

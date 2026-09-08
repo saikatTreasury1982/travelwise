@@ -53,7 +53,7 @@ export default function LoginForm() {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ credential }),
       });
       if (!verifyRes.ok) throw new Error('Authentication failed');
-      router.push('/dashboard');
+      router.push('/trips');
     } catch (err) {
       setGeneralError(err instanceof Error ? err.message : 'Passkey sign-in failed');
     } finally {
@@ -102,7 +102,7 @@ export default function LoginForm() {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }),
         });
         if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Sign-in failed'); }
-        router.push('/dashboard');
+        router.push('/trips');
       }
     } catch (err) {
       setPwError(err instanceof Error ? err.message : 'Something went wrong');

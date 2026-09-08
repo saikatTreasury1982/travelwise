@@ -10,7 +10,7 @@ export const dynamic = 'force-dynamic';
 export default async function AdminPage() {
   const ctx = await getUserContext();
   if (!ctx) redirect('/login');
-  if (ctx.role !== 'owner') redirect('/dashboard');
+  if (ctx.role !== 'owner') redirect('/trips');
 
   const users = await rawQuery<{ first_name: string }>(
     `SELECT first_name FROM users WHERE user_id = ? LIMIT 1`, [ctx.userId],
