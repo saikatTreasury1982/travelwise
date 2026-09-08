@@ -6,9 +6,11 @@ interface ModuleCard { key: string; icon: string; title: string; hint: string; }
 
 export interface HubStats {
   baseCurrency: string;
+  tripBudget: number;
   adhocTotal: number;
   forecastTotal: number;
   variance: number;
+  actualTotal: number;
   hasActuals: boolean;
   checklistTotal: number;
   checklistDone: number;
@@ -26,12 +28,96 @@ function money(n: number, ccy: string) {
   return `${ccy} ${n.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 }
 
+function BudgetMeter({ budget, forecast, actual, hasActuals, ccy }: {
+  budget: number; forecast: number; actual: number | null; hasActuals: boolean; ccy: string;
+}) {
+  const hasActual = hasActuals && actual != null;
+  if (budget <= 0 && forecast <= 0) return null;
+
+  // Scale ceiling: ~15% headroom above the max of the three, rounded up to a clean number.
+  const maxVal = Math.max(budget, forecast, hasActual ? actual! : 0, 1);
+  const rawCeil = maxVal * 1.15;
+  const step = rawCeil > 20000 ? 5000 : rawCeil > 5000 ? 1000 : 500;
+  const scale = Math.ceil(rawCeil / step) * step;
+  const pos = (v: number) => Math.min(100, Math.max(0, (v / scale) * 100));
+
+  const budgetPos = pos(budget);
+  const forePos = pos(forecast);
+  const actPos = hasActual ? pos(actual!) : 0;
+
+  // Glow per dot: green if at/under budget, red if over.
+  const glow = (v: number): string =>
+    budget > 0 && v > budget
+      ? '0 0 0 3px rgba(240,135,107,0.4), 0 0 9px 2px rgba(240,135,107,0.65)'
+      : '0 0 0 3px rgba(127,224,168,0.35), 0 0 8px 2px rgba(127,224,168,0.55)';
+
+  // Headline: actual (if present) vs forecast delta, else forecast.
+  const headline = hasActual ? actual! : forecast;
+  const overBudget = budget > 0 && headline > budget;
+  const delta = hasActual ? actual! - forecast : 0;
+  const overPlan = delta > 0.5, underPlan = delta < -0.5;
+  const stripCcy = (n: number) => money(n, ccy).replace(`${ccy} `, '');
+
+  const dotBase: React.CSSProperties = {
+    position: 'absolute', top: 1, width: 12, height: 12, borderRadius: '50%',
+    transform: 'translate(-50%,-50%)', border: '2px solid var(--panel)', zIndex: 3,
+  };
+
+  return (
+    <div style={{ width: 300, flexShrink: 0 }}>
+      {/* headline */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 16 }}>
+        <span>
+          <b style={{ fontSize: 15, fontWeight: 800, color: overBudget ? '#F0876B' : '#fff' }}>{money(headline, ccy)}</b>
+          {hasActual && (overPlan || underPlan) && (
+            <span style={{
+              fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 999, marginLeft: 7,
+              background: overPlan ? 'rgba(240,135,107,0.22)' : 'rgba(127,224,168,0.22)',
+              color: overPlan ? '#F0876B' : '#7FE0A8',
+            }}>{overPlan ? '+' : '−'}{stripCcy(Math.abs(delta))} vs forecast</span>
+          )}
+        </span>
+        <span style={{ fontSize: 11, color: 'rgba(245,242,237,0.55)' }}>
+          {hasActual ? `of ${money(budget, ccy)}` : `forecast of ${money(budget, ccy)}`}
+        </span>
+      </div>
+
+      {/* axis */}
+      <div style={{ position: 'relative', height: 2, background: 'rgba(255,255,255,0.18)', borderRadius: 2, margin: '0 6px' }}>
+        {budget > 0 && (
+          <div style={{ position: 'absolute', top: -9, bottom: -9, width: 2, background: 'rgba(255,255,255,0.85)', zIndex: 1, left: `${budgetPos}%` }}>
+            <span style={{ position: 'absolute', top: -14, left: '50%', transform: 'translateX(-50%)', fontSize: 8.5, color: 'rgba(245,242,237,0.7)', fontWeight: 700, whiteSpace: 'nowrap' }}>Budget</span>
+          </div>
+        )}
+        <div style={{ ...dotBase, left: `${forePos}%`, background: 'var(--accent)', boxShadow: glow(forecast) }} />
+        {hasActual && (
+          <div style={{ ...dotBase, left: `${actPos}%`, background: '#5C9DE8', boxShadow: glow(actual!) }} />
+        )}
+      </div>
+
+      {/* legend */}
+      <div style={{ display: 'flex', gap: 14, marginTop: 16, justifyContent: 'center' }}>
+        <span style={{ fontSize: 10, color: 'rgba(245,242,237,0.7)', display: 'flex', alignItems: 'center', gap: 5 }}>
+          <i style={{ width: 9, height: 9, borderRadius: '50%', background: 'var(--accent)', display: 'inline-block' }} /> Forecast
+        </span>
+        {hasActual && (
+          <span style={{ fontSize: 10, color: 'rgba(245,242,237,0.7)', display: 'flex', alignItems: 'center', gap: 5 }}>
+            <i style={{ width: 9, height: 9, borderRadius: '50%', background: '#5C9DE8', display: 'inline-block' }} /> Actual
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function TripHubCards({ tripId, travelerCount, stats }: { tripId: number; travelerCount: number; stats: HubStats }) {
   const {
     baseCurrency,
+    tripBudget,
     adhocTotal,
     forecastTotal,
     variance,
+    actualTotal,
     hasActuals,
     checklistTotal,
     checklistDone,
@@ -102,14 +188,23 @@ export default function TripHubCards({ tripId, travelerCount, stats }: { tripId:
 
   return (
     <section className="mt-10">
-      <div className="flex items-center gap-3 rounded-2xl px-4 py-3 mb-5" style={{ background: 'var(--panel)', color: 'var(--panel-ink)' }}>
+      <div className="flex items-center gap-4 rounded-2xl px-5 py-4 mb-5" style={{ background: 'var(--panel)', color: 'var(--panel-ink)' }}>
         <span className="flex-shrink-0 w-9 h-9 rounded-[10px] flex items-center justify-center text-[16px]" style={{ background: 'color-mix(in srgb, var(--accent) 30%, transparent)' }}>✦</span>
-        <div className="flex-grow">
+        <div className="flex-grow min-w-0">
           <div className="text-[14px] font-semibold">Your planning co-pilot</div>
           <div className="text-[12.5px]" style={{ color: 'rgba(245,242,237,0.7)' }}>
-                        {travelerCount > 0 ? 'Plan flights, lodging, and your day-by-day itinerary — all in one place.' : 'Add your travellers first to start planning and splitting costs.'}
+            {travelerCount > 0 ? 'Plan flights, lodging, and your day-by-day itinerary — all in one place.' : 'Add your travellers first to start planning and splitting costs.'}
           </div>
         </div>
+        {travelerCount > 0 && forecastTotal > 0 && (
+          <BudgetMeter
+            budget={tripBudget}
+            forecast={forecastTotal}
+            actual={hasActuals ? actualTotal : null}
+            hasActuals={hasActuals}
+            ccy={baseCurrency}
+          />
+        )}
       </div>
 
       <h2 className="text-xs font-bold uppercase mb-3" style={{ color: 'var(--accent-deep)', letterSpacing: '0.4px' }}>Plan this trip</h2>

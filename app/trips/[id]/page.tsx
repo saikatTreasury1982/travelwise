@@ -47,9 +47,11 @@ export default async function TripDetailPage({ params }: { params: Promise<{ id:
 
   const hubStats = {
     baseCurrency: forecast.base_currency,
+    tripBudget: trip.trip_budget ?? 0,
     adhocTotal: adhoc.filter((e) => e.is_active).reduce((s, e) => s + e.estimated_amount_base, 0),
     forecastTotal: forecast.total_base,
     variance: variance.variance,
+    actualTotal: variance.actual_total,
     hasActuals: variance.actual_total > 0,
     checklistTotal: checklistStats.total,
     checklistDone: checklistStats.done,
