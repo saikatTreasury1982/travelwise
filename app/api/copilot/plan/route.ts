@@ -5,8 +5,8 @@ import { getUserContext } from '@/app/lib/auth/context';
 import { rawQuery } from '@/app/lib/db/client';
 import { PLANNING_TOOLS } from '@/app/lib/copilot/planning/tools';
 import { planningSystemPrompt } from '@/app/lib/copilot/planning/prompts';
-import { saveTrip, updateTrip, getTripDetail, addDestination, updateDestination, removeDestination, type TripInput } from '@/app/lib/services/trip-service';
 import { addCoTravelers, updateTraveler, removeTraveler } from '@/app/lib/services/traveler-service';
+import { saveTrip, updateTrip, getTripDetail, addDestination, updateDestination, removeDestination, backfillTripCoords, type TripInput } from '@/app/lib/services/trip-service';
 
 const MODEL = 'claude-sonnet-4-5';
 
@@ -74,6 +74,7 @@ export async function POST(request: Request) {
         const text = response.content
           .filter((c): c is Anthropic.TextBlock => c.type === 'text')
           .map((c) => c.text).join('\n').trim();
+        if (savedTripId) backfillTripCoords(ctx, savedTripId).catch(() => { });
         const full = savedTripId ? await getTripDetail(ctx, savedTripId) : null;
         return NextResponse.json({
           type: savedTripId ? 'saved' : 'message',
@@ -154,6 +155,7 @@ export async function POST(request: Request) {
       convo.push({ role: 'user', content: toolResults });
     }
 
+    if (savedTripId) backfillTripCoords(ctx, savedTripId).catch(() => {});
     const full = savedTripId ? await getTripDetail(ctx, savedTripId) : null;
     return NextResponse.json({ type: savedTripId ? 'saved' : 'message', message: 'Your trip is saved.', trip: full, tripId: savedTripId });
   } catch (err) {

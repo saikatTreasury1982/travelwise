@@ -72,17 +72,30 @@ export async function saveTrip(ctx: TenantContext, input: TripInput): Promise<Sa
     });
     const tripId = Number(tripRes.lastInsertRowid);
 
-    // 2. destinations
+    // 2. destinations — geocode BEFORE inserting, and do NOT hold the network
+    //    call inside the write transaction (Turso: a slow await mid-transaction
+    //    risks timeout). Geocode all first, then insert the resolved rows.
     if (input.destinations?.length) {
       const { geocode } = await import('@/app/lib/services/geocode');
-      for (let i = 0; i < input.destinations.length; i++) {
-        const d = input.destinations[i];
-        const g = await geocode(d.city ?? null, d.country);
+      const resolved = await Promise.all(
+        input.destinations.map(async (d, i) => {
+          const g = await geocode(d.city ?? null, d.country);
+          return {
+            country: d.country,
+            city: d.city ?? null,
+            countryCode: g.countryCode ?? d.countryCode ?? null,
+            latitude: g.latitude,
+            longitude: g.longitude,
+            displayOrder: d.displayOrder ?? i,
+          };
+        }),
+      );
+      for (const r of resolved) {
         await tx.execute({
           sql: `INSERT INTO trip_destinations
                   (tenant_id, trip_id, country, city, country_code, latitude, longitude, display_order)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-          args: [ctx.tenantId, tripId, d.country, d.city ?? null, g.countryCode ?? d.countryCode ?? null, g.latitude, g.longitude, d.displayOrder ?? i],
+          args: [ctx.tenantId, tripId, r.country, r.city, r.countryCode, r.latitude, r.longitude, r.displayOrder],
         });
       }
     }
@@ -365,6 +378,39 @@ export async function addDestination(
     longitude: lon,
     display_order: nextOrder,
   });
+}
+
+/**
+ * Self-heal: geocode any of THIS trip's destinations that are missing coordinates.
+ * Fire-and-forget after creation; also safe to call on trip view. Scoped to one
+ * trip (never a tenant-wide sweep). Best-effort — a geocode miss just stays null
+ * and can be retried next time.
+ */
+export async function backfillTripCoords(ctx: TenantContext, tripId: number): Promise<void> {
+  try {
+    const rows = await scopedQuery(
+      ctx,
+      `SELECT destination_id, country, city
+         FROM trip_destinations
+        WHERE {{tenant}} AND trip_id = ? AND (latitude IS NULL OR longitude IS NULL)`,
+      [tripId],
+    );
+    if (rows.length === 0) return;
+    const { geocode } = await import('@/app/lib/services/geocode');
+    for (const r of rows) {
+      try {
+        const g = await geocode(r.city == null ? null : String(r.city), String(r.country));
+        if (g.latitude == null || g.longitude == null) continue; // still a miss — leave for next time
+        await scopedExecute(
+          ctx,
+          `UPDATE trip_destinations
+              SET latitude = ?, longitude = ?, country_code = COALESCE(country_code, ?)
+            WHERE {{tenant}} AND trip_id = ? AND destination_id = ?`,
+          [g.latitude, g.longitude, g.countryCode ?? null, tripId, Number(r.destination_id)],
+        );
+      } catch { /* one destination failing shouldn't stop the rest */ }
+    }
+  } catch { /* best-effort */ }
 }
 
 export async function updateDestination(

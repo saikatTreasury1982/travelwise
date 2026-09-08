@@ -7,7 +7,6 @@ import TravelersSection from '@/app/components/hub/TravelersSection';
 import DestinationSearch, { type GeoPick } from '@/app/components/ui/DestinationSearch';
 import TripHubCards, { type HubStats } from '@/app/components/hub/TripHubCards';
 import TripStatusControl from '@/app/components/hub/TripStatusControl';
-import type { WeatherNormals } from '@/app/lib/services/weather';
 
 interface Trip {
   trip_id: number; trip_name: string; trip_description: string | null;
@@ -62,28 +61,6 @@ export default function TripDetail({ trip: initial, currencies, hubStats }: { tr
 
   const [addingDest, setAddingDest] = useState(false);
   const [destBusy, setDestBusy] = useState(false);
-
-  // Weather panel state (tab-bar behaviour: one open destination at a time)
-  const [wxOpenId, setWxOpenId] = useState<number | null>(null);
-  const [wxData, setWxData] = useState<Record<number, WeatherNormals | null>>({});
-  const [wxLoading, setWxLoading] = useState<number | null>(null);
-
-  async function toggleWeather(destId: number) {
-    // Click the already-open one → close it.
-    if (wxOpenId === destId) { setWxOpenId(null); return; }
-    setWxOpenId(destId);
-    if (wxData[destId] !== undefined) return; // already fetched (incl. cached null) — instant
-    setWxLoading(destId);
-    try {
-      const res = await fetch(`/api/trips/${trip.trip_id}/destinations/${destId}/weather`);
-      const d = await res.json();
-      setWxData((m) => ({ ...m, [destId]: d.weather ?? null }));
-    } catch {
-      setWxData((m) => ({ ...m, [destId]: null }));
-    } finally {
-      setWxLoading(null);
-    }
-  }
 
   function openTravellers() {
     setTravOpen(true);
