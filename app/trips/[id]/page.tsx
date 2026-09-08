@@ -11,6 +11,8 @@ import { getFlightCounts } from '@/app/lib/services/flight-service';
 import { getLodgingCounts } from '@/app/lib/services/lodging-service';
 import { getItineraryCounts } from '@/app/lib/services/itinerary-service';
 import { hasFeatureInterest } from '@/app/lib/services/feature-interest-service';
+import { getProfile } from '@/app/lib/services/user-service';
+import { listCurrencies } from '@/app/lib/services/reference-service';
 
 export default async function TripDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -20,10 +22,8 @@ export default async function TripDetailPage({ params }: { params: Promise<{ id:
   const ctx = await getUserContext();
   if (!ctx) redirect('/login');
 
-  const users = await rawQuery<{ first_name: string }>(
-    `SELECT first_name FROM users WHERE user_id = ? LIMIT 1`, [ctx.userId],
-  );
-  const firstName = users[0]?.first_name ?? 'traveller';
+  const profile = await getProfile(ctx);
+  const firstName = profile?.first_name ?? 'traveller';
 
   const trip = await getTripDetail(ctx, tripId);
 
@@ -31,13 +31,7 @@ export default async function TripDetailPage({ params }: { params: Promise<{ id:
 
   if (!trip) notFound();
 
-  const currencies = (await rawQuery(
-    `SELECT currency_code, currency_name, currency_symbol FROM currencies ORDER BY currency_code`
-  )).map((c) => ({
-    currency_code: String(c.currency_code),
-    currency_name: String(c.currency_name),
-    currency_symbol: c.currency_symbol == null ? null : String(c.currency_symbol),
-  }));
+  const currencies = await listCurrencies();
 
   const [forecast, variance, adhoc, checklistStats, flightCounts, lodgingCounts, itineraryCounts,] = await Promise.all([
     getForecast(ctx, tripId),

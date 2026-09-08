@@ -14,6 +14,7 @@ import ChecklistView from '@/app/components/hub/ChecklistView';
 import FlightBookingsView from '@/app/components/hub/flights/FlightBookingsView';
 import LodgingView from '@/app/components/hub/lodging/LodgingView';
 import ItineraryView from '@/app/components/hub/itinerary/ItineraryView';
+import { listCurrencies } from '@/app/lib/services/reference-service';
 
 export const dynamic = 'force-dynamic';
 
@@ -45,13 +46,7 @@ export default async function TripModulePage({ params }: { params: Promise<{ id:
   const trip = await getTripDetail(ctx, tripId);
   if (!trip) notFound();
 
-  const currencies = (await rawQuery(
-    `SELECT currency_code, currency_name, currency_symbol FROM currencies ORDER BY currency_code`
-  )).map((c) => ({
-    currency_code: String(c.currency_code),
-    currency_name: String(c.currency_name),
-    currency_symbol: c.currency_symbol == null ? null : String(c.currency_symbol),
-  }));
+  const currencies = await listCurrencies();
 
   // Real module: Ad-hoc Expenses
   if (module === 'adhoc') {

@@ -5,6 +5,7 @@ import TopNav from '@/app/components/hub/TopNav';
 import SettingsShell from '@/app/components/settings/SettingsShell';
 import { PROFILE_NAV } from '@/app/components/profile/profileNav';
 import ProfileDetailsForm, { type ProfileData } from '@/app/components/profile/ProfileDetailsForm';
+import { listCurrencies, listCountries } from '@/app/lib/services/reference-service';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,21 +14,9 @@ export default async function ProfilePage() {
   const profile = await getProfile(ctx);
 
   // Reference lists (global tables — not tenant-scoped).
-  const countries = (await rawQuery(
-    `SELECT country_code, country_name, currency_code FROM countries ORDER BY country_name`
-  )).map((c) => ({
-    country_code: String(c.country_code),
-    country_name: String(c.country_name),
-    currency_code: String(c.currency_code),
-  }));
+  const countries = await listCountries();
 
-  const currencies = (await rawQuery(
-    `SELECT currency_code, currency_name, currency_symbol FROM currencies ORDER BY currency_code`
-  )).map((c) => ({
-    currency_code: String(c.currency_code),
-    currency_name: String(c.currency_name),
-    currency_symbol: c.currency_symbol == null ? null : String(c.currency_symbol),
-  }));
+  const currencies = await listCurrencies();
 
   const initial: ProfileData = {
     user_id: profile?.user_id ?? ctx.userId,
