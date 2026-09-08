@@ -35,7 +35,8 @@ export default function AIDraftFlow({
     const [brief, setBrief] = useState('');
     const [prefs, setPrefs] = useState<Preferences>({ pace: 'balanced', budget: 'as_is', focus: [] });
     const [session, setSession] = useState<Session | null>(null);
-    const [busy, setBusy] = useState(false);
+    const [busy, setBusy] = useState(false);     // generate / revise
+    const [saving, setSaving] = useState(false); // accept / discard
     const [note, setNote] = useState<string | null>(null);
     const [capMessage, setCapMessage] = useState<string | null>(null);
     const [title, setTitle] = useState('');
@@ -88,8 +89,8 @@ export default function AIDraftFlow({
     }
 
     async function accept() {
-        if (!title.trim() || busy) return;
-        setBusy(true);
+        if (!title.trim() || saving) return;
+        setSaving(true);
         try {
             const res = await fetch(`/api/trips/${tripId}/itinerary/draft/accept`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -97,13 +98,13 @@ export default function AIDraftFlow({
             });
             const d = await res.json();
             if (d.ok) { setSavedTitle(title.trim()); setStage('accepted'); (window as any).__lastDraftItinId = d.itinerary_id; }
-        } finally { setBusy(false); }
+        } finally { setSaving(false); }
     }
 
     async function discard() {
-        setBusy(true);
+        setSaving(true);
         try { await fetch(`/api/trips/${tripId}/itinerary/draft/discard`, { method: 'POST' }); }
-        finally { setBusy(false); onCancel(); }
+        finally { setSaving(false); onCancel(); }
     }
 
     function resetForAnother() {
@@ -313,12 +314,12 @@ export default function AIDraftFlow({
                 <input value={title} onChange={(e) => setTitle(e.target.value)}
                     placeholder="Name this plan to save it"
                     className="text-[13.5px] px-3 py-2 rounded-lg" style={{ background: 'var(--canvas)', border: '1px solid var(--border)', color: 'var(--ink)', outline: 'none', maxWidth: 320, flex: 1 }} />
-                <button onClick={accept} disabled={!title.trim() || busy}
+                <button onClick={accept} disabled={!title.trim() || saving || busy}
                     className="tw-btn text-[13px] font-bold px-4 py-2 rounded-lg"
-                    style={{ background: 'var(--success)', color: '#fff', border: 'none', opacity: (!title.trim() || busy) ? 0.5 : 1, cursor: (!title.trim() || busy) ? 'not-allowed' : 'pointer' }}>
-                    Use this plan →
+                    style={{ background: 'var(--success)', color: '#fff', border: 'none', opacity: (!title.trim() || saving || busy) ? 0.5 : 1, cursor: (!title.trim() || saving || busy) ? 'not-allowed' : 'pointer' }}>
+                    {saving ? 'Saving…' : 'Use this plan →'}
                 </button>
-                <button onClick={discard} disabled={busy} className="tw-btn text-[13px] font-semibold px-3 py-2 rounded-lg" style={{ background: 'none', color: 'var(--danger)', border: 'none' }}>Discard</button>
+                <button onClick={discard} disabled={saving || busy} className="tw-btn text-[13px] font-semibold px-3 py-2 rounded-lg" style={{ background: 'none', color: 'var(--danger)', border: 'none' }}>Discard</button>
             </div>
         </div>
     );

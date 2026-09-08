@@ -94,49 +94,46 @@ export default function ItineraryView({ tripId, currencies, baseCurrency, tripSt
                 tripBudget={tripBudget}
                 travelerCount={travelerCount}
                 tripStart={tripStart}
-                onCancel={() => setView('list')}
+                onCancel={() => { loadList(); setView('list'); }}
                 onAccepted={(itineraryId) => { loadList(); openPlan(itineraryId); }}
                 onDraftAnother={() => { /* stay in aidraft; AIDraftFlow resets itself */ }}
             />
         );
     }
 
+    // ── Editor view: a plan is open ───────────────────────────────────────────
     if (view === 'editor' && activeId != null) {
-
-        // ── Editor view: a plan is open ───────────────────────────────────────────
-        if (view === 'editor' && activeId != null) {
-            return (
-                <ItineraryEditor
-                    tripId={tripId}
-                    itineraryId={activeId}
-                    itineraries={itineraries}
-                    onSwitch={openPlan}
-                    onListChanged={loadList}
-                    onBackToList={() => setView('list')}
-                    roster={roster}
-                    currencies={currencies}
-                    baseCurrency={baseCurrency}
-                    tripStart={tripStart}
-                    tripEnd={tripEnd}
-                />
-            );
-        }
-
-        // ── Landing: create + list of itineraries (always shown otherwise) ─────────
         return (
-            <ItineraryLanding
-                onDraftAI={() => setView('aidraft')}
-                itineraries={itineraries}
-                longTrip={longTrip}
-                tripDays={tripDays}
-                creating={creating}
-                onCreate={createItinerary}
-                onOpen={openPlan}
-                onRenamed={loadList}
+            <ItineraryEditor
                 tripId={tripId}
+                itineraryId={activeId}
+                itineraries={itineraries}
+                onSwitch={openPlan}
+                onListChanged={loadList}
+                onBackToList={() => setView('list')}
+                roster={roster}
+                currencies={currencies}
+                baseCurrency={baseCurrency}
+                tripStart={tripStart}
+                tripEnd={tripEnd}
             />
         );
     }
+
+    // ── Landing: create + list of itineraries (always shown otherwise) ─────────
+    return (
+        <ItineraryLanding
+            onDraftAI={() => setView('aidraft')}
+            itineraries={itineraries}
+            longTrip={longTrip}
+            tripDays={tripDays}
+            creating={creating}
+            onCreate={createItinerary}
+            onOpen={openPlan}
+            onRenamed={loadList}
+            tripId={tripId}
+        />
+    );
 
     function ItineraryLanding({
         itineraries, longTrip, tripDays, creating, onCreate, onOpen, onRenamed, onDraftAI, tripId,
