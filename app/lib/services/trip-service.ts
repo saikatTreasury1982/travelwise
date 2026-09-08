@@ -8,6 +8,7 @@ import type { TenantContext } from '@/app/lib/db/scoped';
 import { ensurePrimaryTraveler } from '@/app/lib/services/traveler-service';
 import { resolveTripStatus } from '@/app/lib/services/trip-status';
 import { TRIP_STATUS } from '@/app/lib/services/trip-status';
+import { getTripBaseCurrency } from '@/app/lib/services/expense-service';
 
 // The structured trip the AI produces (and the form could produce too).
 export interface TripDestinationInput {
@@ -308,7 +309,16 @@ export async function updateTrip(ctx: TenantContext, tripId: number, input: Trip
   if (input.description !== undefined) set('trip_description', input.description);
   if (input.startDate !== undefined) set('start_date', input.startDate);
   if (input.endDate !== undefined) set('end_date', input.endDate);
-  if (input.budget !== undefined) set('trip_budget', input.budget);
+  if (input.budget !== undefined) {
+    set('trip_budget', input.budget);
+    // Budget currency is always the trip's base (primary traveller's home currency).
+    // Auto-derive it whenever a budget is set and no explicit currency was passed,
+    // so manual panel edits / AI / hub edits all get a consistent currency.
+    if (input.budget != null && input.budgetCurrency === undefined) {
+      const base = await getTripBaseCurrency(ctx, tripId);
+      if (base) set('budget_currency', base);
+    }
+  }
   if (input.budgetCurrency !== undefined) set('budget_currency', input.budgetCurrency);
   if (input.statusCode !== undefined) set('status_code', input.statusCode);
 

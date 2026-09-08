@@ -5,7 +5,7 @@ import { rawQuery } from '@/app/lib/db/client';
 import { listTripsWithDetails } from '@/app/lib/services/trip-service';
 import TopNav from '@/app/components/hub/TopNav';
 import TripCard from '@/app/components/hub/TripCard';
-import CopilotHero from '@/app/components/hub/CopilotHero';
+import PlanLauncher from '@/app/components/hub/PlanLauncher';
 import ComingUp from '@/app/components/hub/ComingUp';
 
 export const dynamic = 'force-dynamic';
@@ -21,8 +21,8 @@ export default async function TripsPage() {
     <div style={{ background: 'var(--canvas)', minHeight: '100vh' }}>
       <TopNav firstName={firstName} active="trips" />
       <div className="px-6 md:px-10 py-8 max-w-[1040px] mx-auto">
-        {/* Hero — the create front door */}
-        <CopilotHero firstName={firstName} />
+        {/* Hero + slide-over planning panel */}
+        <PlanLauncher firstName={firstName} />
 
         {trips.length === 0 ? (
           <div className="rounded-2xl p-10 text-center mt-8" style={{ background: 'var(--surface)', border: '1px dashed var(--border)' }}>

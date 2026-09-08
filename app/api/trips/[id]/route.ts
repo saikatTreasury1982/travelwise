@@ -26,7 +26,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const ok = await updateTrip(ctx, Number(id), body);
     if (!ok) return NextResponse.json({ error: 'Not found' }, { status: 404 });
     await writeAudit({ event: 'trip.update', result: 'success', tenantId: ctx.tenantId, userId: ctx.userId, detail: { tripId: Number(id), fields: Object.keys(body) } });
-    return NextResponse.json({ ok: true });
+    const trip = await getTripDetail(ctx, Number(id));
+    return NextResponse.json({ ok: true, trip });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Update failed' }, { status: 400 });
   }

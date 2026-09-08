@@ -56,8 +56,11 @@ export default function TripPanel({
       const res = await fetch(`/api/trips/${trip.trip_id}`, {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
       });
-      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Could not save.');
-      onChange({ ...trip, ...optimistic });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Could not save.');
+      // Prefer the server's version (carries the auto-derived budget_currency);
+      // fall back to the optimistic patch if no trip came back.
+      onChange(data.trip ? (data.trip as PanelTrip) : { ...trip, ...optimistic });
       setEditing(null);
     } catch (e) { setErr(e instanceof Error ? e.message : 'Could not save.'); }
     finally { setBusy(false); }
@@ -161,7 +164,13 @@ export default function TripPanel({
             </div>
             {editing === 'budget' ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <input type="number" value={budget} onChange={(e) => setBudget(e.target.value)} placeholder="Amount" style={inputStyle} />
+                <div style={{ position: 'relative' }}>
+                  {trip.budget_currency && (
+                    <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', fontSize: 13, fontWeight: 700, color: 'var(--ink-soft)', pointerEvents: 'none' }}>{trip.budget_currency}</span>
+                  )}
+                  <input type="number" value={budget} onChange={(e) => setBudget(e.target.value)} placeholder="Amount"
+                    style={{ ...inputStyle, paddingLeft: trip.budget_currency ? 52 : 12 }} />
+                </div>
                 <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
                   <button disabled={busy} style={saveBtn}
                     onClick={() => { const b = budget === '' ? null : Number(budget); patchTrip({ budget: b }, { trip_budget: b }); }}>Save</button>

@@ -1,20 +1,8 @@
 // app/plan/page.tsx
-import { Suspense } from 'react';
 import { redirect } from 'next/navigation';
-import { getUserContext } from '@/app/lib/auth/context';
-import { rawQuery } from '@/app/lib/db/client';
-import CopilotHome from '@/app/components/copilot/CopilotHome';
 
-export default async function PlanPage() {
-  const ctx = await getUserContext();
-  if (!ctx) redirect('/login');
-  const users = await rawQuery<{ first_name: string }>(
-    `SELECT first_name FROM users WHERE user_id = ? LIMIT 1`, [ctx.userId],
-  );
-  const firstName = users[0]?.first_name ?? 'traveller';
-  return (
-    <Suspense fallback={null}>
-      <CopilotHome firstName={firstName} />
-    </Suspense>
-  );
+// Trip planning now happens in a slide-over panel on the My Trips page.
+// This route is kept only to redirect any old links/bookmarks.
+export default function PlanPage() {
+  redirect('/trips');
 }

@@ -1,17 +1,11 @@
 // app/components/hub/CopilotHero.tsx
 'use client';
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 
-export default function CopilotHero({ firstName }: { firstName: string }) {
-  const router = useRouter();
+export default function CopilotHero({ firstName, onStart }: { firstName: string; onStart: (prompt: string) => void }) {
   const [prompt, setPrompt] = useState('');
 
-  function start() {
-    const text = prompt.trim();
-    // Hand the prompt to the full planning page via query param.
-    router.push(text ? `/plan?q=${encodeURIComponent(text)}` : '/plan');
-  }
+  function start() { onStart(prompt.trim()); }
 
   return (
     <div className="relative overflow-hidden rounded-[22px] p-8 md:p-10 mb-8"
