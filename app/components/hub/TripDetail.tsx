@@ -7,6 +7,7 @@ import TravelersSection from '@/app/components/hub/TravelersSection';
 import DestinationSearch, { type GeoPick } from '@/app/components/ui/DestinationSearch';
 import TripHubCards, { type HubStats } from '@/app/components/hub/TripHubCards';
 import TripStatusControl from '@/app/components/hub/TripStatusControl';
+import ClimateTeaser from '@/app/components/hub/ClimateTeaser';
 
 interface Trip {
   trip_id: number; trip_name: string; trip_description: string | null;
@@ -274,40 +275,20 @@ export default function TripDetail({ trip: initial, currencies, hubStats }: { tr
               <p className="text-[14px]" style={{ color: 'var(--ink-faint)' }}>No destinations added.</p>
             ) : (
               <div className="flex flex-col gap-2">
-                {trip.destinations.map((d) => {
-                  const open = wxOpenId === d.destination_id;
-                  const wx = wxData[d.destination_id];
-                  const loading = wxLoading === d.destination_id;
-                  return (
-                    <div key={d.destination_id}>
-                      <div className="flex items-center gap-3 rounded-xl p-3.5"
-                        style={{ background: 'var(--surface)', border: `1px solid ${open ? 'var(--accent)' : 'var(--border)'}` }}>
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent-deep)" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></svg>
-                        <span className="flex-grow text-[15px] font-medium" style={{ color: 'var(--ink)' }}>{d.city ? `${d.city}, ${d.country}` : d.country}</span>
-                        <button onClick={() => toggleWeather(d.destination_id)}
-                          className="text-[12px] font-semibold px-2.5 py-1 rounded-md flex-shrink-0 inline-flex items-center gap-1.5"
-                          style={{ color: open ? 'var(--accent-deep)' : 'var(--ink-soft)', background: open ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'transparent' }}>
-                          <span style={{ fontSize: 13 }}>☀︎</span> Weather
-                        </button>
-                        <button onClick={() => removeDestination(d.destination_id)} disabled={destBusy}
-                          className="text-[12px] px-2.5 py-1 rounded-md flex-shrink-0" style={{ color: 'var(--danger)' }}>Remove</button>
-                      </div>
-                      {open && (
-                        <div className="mt-2 rounded-xl p-4" style={{ background: 'var(--surface)', border: '1px solid var(--accent)', boxShadow: '0 6px 20px rgba(20,15,8,0.06)' }}>
-                          {loading ? (
-                            <div className="text-[13px] py-2" style={{ color: 'var(--ink-faint)' }}>Checking typical weather…</div>
-                          ) : wx ? (
-                            <WeatherBody wx={wx} city={d.city || d.country} start={trip.start_date} end={trip.end_date} />
-                          ) : (
-                            <div className="text-[13px] py-2" style={{ color: 'var(--ink-faint)' }}>Typical weather isn’t available for this destination right now.</div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
+                {trip.destinations.map((d) => (
+                  <div key={d.destination_id} className="flex items-center gap-3 rounded-xl p-3.5"
+                    style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent-deep)" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></svg>
+                    <span className="flex-grow text-[15px] font-medium" style={{ color: 'var(--ink)' }}>{d.city ? `${d.city}, ${d.country}` : d.country}</span>
+                    <button onClick={() => removeDestination(d.destination_id)} disabled={destBusy}
+                      className="text-[12px] px-2.5 py-1 rounded-md flex-shrink-0" style={{ color: 'var(--danger)' }}>Remove</button>
+                  </div>
+                ))}
               </div>
             )}
+            {/* Premium climate teaser — value-led, one-click interest capture */}
+            {trip.destinations.length > 0 && <ClimateTeaser tripId={trip.trip_id} />}
+            {/* addingDest form continues below */}
             {addingDest && (
               <div className="mt-3 rounded-xl p-4" style={{ background: 'var(--surface)', border: '1px solid var(--accent)' }}>
                 <DestinationSearch onPick={addDestination} />
@@ -340,42 +321,6 @@ export default function TripDetail({ trip: initial, currencies, hubStats }: { tr
 
       {/* Plan-this-trip module cards + AI strip (ADR-010 hub) */}
       <TripHubCards tripId={trip.trip_id} travelerCount={trip.travelers.length} stats={hubStats} />
-    </div>
-  );
-}
-
-function WeatherBody({ wx, city, start, end }: { wx: WeatherNormals; city: string; start: string; end: string }) {
-  const fmtShort = (d: string) => { try { return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); } catch { return d; } };
-  return (
-    <div>
-      <div className="flex items-baseline gap-2 mb-0.5">
-        <span className="text-[16px] font-bold" style={{ color: 'var(--ink)' }}>{city}</span>
-        <span className="text-[12px]" style={{ color: 'var(--ink-faint)' }}>· typical for {fmtShort(start)}–{fmtShort(end)}</span>
-      </div>
-      <div className="text-[12px] mb-3.5" style={{ color: 'var(--ink-soft)' }}>
-        Based on the last {wx.years} year{wx.years === 1 ? '' : 's'} of records for this week of the year.
-      </div>
-      <div className="grid grid-cols-3 gap-2.5 mb-3.5">
-        <div className="rounded-lg p-2.5" style={{ background: 'var(--canvas)', border: '1px solid var(--divider)' }}>
-          <div className="text-[10.5px] uppercase tracking-wide" style={{ color: 'var(--ink-faint)' }}>Avg high</div>
-          <div className="text-[18px] font-extrabold" style={{ color: 'var(--danger)' }}>{wx.tempMax}°<span className="text-[11px] font-semibold" style={{ color: 'var(--ink-soft)' }}>C</span></div>
-        </div>
-        <div className="rounded-lg p-2.5" style={{ background: 'var(--canvas)', border: '1px solid var(--divider)' }}>
-          <div className="text-[10.5px] uppercase tracking-wide" style={{ color: 'var(--ink-faint)' }}>Avg low</div>
-          <div className="text-[18px] font-extrabold" style={{ color: 'var(--success)' }}>{wx.tempMin}°<span className="text-[11px] font-semibold" style={{ color: 'var(--ink-soft)' }}>C</span></div>
-        </div>
-        <div className="rounded-lg p-2.5" style={{ background: 'var(--canvas)', border: '1px solid var(--divider)' }}>
-          <div className="text-[10.5px] uppercase tracking-wide" style={{ color: 'var(--ink-faint)' }}>Rain chance</div>
-          <div className="text-[18px] font-extrabold" style={{ color: 'var(--accent-deep)' }}>{wx.precipitationChance}%</div>
-        </div>
-      </div>
-      <div className="flex items-center gap-2.5 rounded-lg px-3 py-2.5" style={{ background: 'color-mix(in srgb, var(--accent) 8%, transparent)', fontSize: 13, color: 'var(--ink)' }}>
-        <span style={{ fontSize: 18 }}>{wx.precipitationChance > 40 ? '🌦️' : wx.precipitationChance > 20 ? '⛅' : '☀️'}</span>
-        <span>{wx.description}</span>
-      </div>
-      <div className="text-[10.5px] mt-3" style={{ color: 'var(--ink-faint)', fontStyle: 'italic' }}>
-        Climate averages · Open-Meteo. Typical conditions, not a forecast.
-      </div>
     </div>
   );
 }
