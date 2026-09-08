@@ -6,6 +6,7 @@ import { listTripsWithDetails } from '@/app/lib/services/trip-service';
 import TopNav from '@/app/components/hub/TopNav';
 import TripCard from '@/app/components/hub/TripCard';
 import CopilotHero from '@/app/components/hub/CopilotHero';
+import ComingUp from '@/app/components/hub/ComingUp';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,24 +20,28 @@ export default async function TripsPage() {
   return (
     <div style={{ background: 'var(--canvas)', minHeight: '100vh' }}>
       <TopNav firstName={firstName} active="trips" />
-      <div className="px-6 md:px-10 py-8 max-w-[1280px] mx-auto">
-        {/* Co-pilot hero — full width at the top */}
+      <div className="px-6 md:px-10 py-8 max-w-[1040px] mx-auto">
+        {/* Hero — the create front door */}
         <CopilotHero firstName={firstName} />
 
-        {/* Trips section below the hero */}
-        <div className="flex items-center justify-between mt-10 mb-6">
-          <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 'clamp(28px,4vw,38px)', color: 'var(--ink)' }}>My Trips</h1>
-        </div>
-
         {trips.length === 0 ? (
-          <div className="rounded-2xl p-10 text-center" style={{ background: 'var(--surface)', border: '1px dashed var(--border)' }}>
+          <div className="rounded-2xl p-10 text-center mt-8" style={{ background: 'var(--surface)', border: '1px dashed var(--border)' }}>
             <p className="text-sm mb-1" style={{ color: 'var(--ink)' }}>No trips yet.</p>
-            <p className="text-[13px]" style={{ color: 'var(--ink-faint)' }}>Describe a trip and let the co-pilot plan it.</p>
+            <p className="text-[13px]" style={{ color: 'var(--ink-faint)' }}>Describe a trip above and let the co-pilot plan it.</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {trips.map((t) => <TripCard key={t.trip_id} trip={t} />)}
-          </div>
+          <>
+            {/* Coming up — windowed featured trips (client component) */}
+            <ComingUp trips={trips as any} />
+
+            {/* All trips — the full grid, unfiltered */}
+            <div className="flex items-center justify-between mt-12 mb-5">
+              <h2 className="text-xs font-bold uppercase" style={{ color: 'var(--accent-deep)', letterSpacing: '0.4px' }}>All your trips</h2>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {trips.map((t) => <TripCard key={t.trip_id} trip={t} />)}
+            </div>
+          </>
         )}
       </div>
     </div>
