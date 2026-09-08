@@ -21,7 +21,7 @@ export default function TopNav({ firstName, active = 'home' }: { firstName: stri
     fetch('/api/admin/ownerTool')
       .then((r) => r.json())
       .then((d) => setIsOwner(d.role === 'owner'))
-      .catch(() => {});
+      .catch(() => { });
   }, []);
 
   async function handleLogout() {
@@ -30,10 +30,9 @@ export default function TopNav({ firstName, active = 'home' }: { firstName: stri
   }
 
   const links = [
-    { key: 'home', label: 'Home', href: '/dashboard' },
-    { key: 'trips', label: 'My Trips', href: '/trips' },
-    { key: 'guides', label: 'Guides', href: '/guides' },
-    { key: 'explore', label: 'Explore', href: '/explore' },
+    { key: 'trips', label: 'My Trips', href: '/trips', soon: false },
+    { key: 'guides', label: 'Guides', href: '/guides', soon: true },
+    { key: 'explore', label: 'Explore', href: '/explore', soon: true },
   ];
 
   return (
@@ -44,12 +43,20 @@ export default function TopNav({ firstName, active = 'home' }: { firstName: stri
       </Link>
 
       <div className="flex items-center gap-5 md:gap-6 text-sm font-medium">
-        {links.map((l) => (
-          <Link key={l.key} href={l.href} className="hidden sm:inline"
-            style={{ color: l.key === active ? 'var(--ink)' : 'var(--ink-soft)', fontWeight: l.key === active ? 600 : 500 }}>
-            {l.label}
-          </Link>
-        ))}
+        {links.map((l) =>
+          l.soon ? (
+            <span key={l.key} className="hidden sm:inline-flex items-center gap-1.5" title="Coming soon"
+              style={{ color: 'var(--ink-faint)', fontWeight: 500, cursor: 'default', opacity: 0.55 }}>
+              {l.label}
+              <span style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.3px', padding: '2px 6px', borderRadius: 999, background: 'color-mix(in srgb, var(--ink) 7%, transparent)', color: 'var(--ink-faint)' }}>soon</span>
+            </span>
+          ) : (
+            <Link key={l.key} href={l.href} className="hidden sm:inline"
+              style={{ color: l.key === active ? 'var(--ink)' : 'var(--ink-soft)', fontWeight: l.key === active ? 600 : 500 }}>
+              {l.label}
+            </Link>
+          )
+        )}
         <div className="relative" ref={ref}>
           <button onClick={() => setMenuOpen((o) => !o)}
             className="w-9 h-9 rounded-full flex items-center justify-center text-[13px] font-semibold"
