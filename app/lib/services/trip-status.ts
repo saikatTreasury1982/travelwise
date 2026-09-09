@@ -56,26 +56,26 @@ export async function resolveTripStatus(
 
 /**
  * True if the trip has any planning content across the built modules.
- *
- * Only tables that EXIST today are queried: expenses (ad-hoc) + checklist_items.
- * Flights / lodging / itinerary are pending (ADR-010) — uncomment each line
- * when that module's table is built, no other change needed here.
+ * "Planning content" = the user has started planning in ANY module, whether or
+ * not it's confirmed (a shortlisted flight/hotel counts — ADR-006 Amendment B).
  *
  * Single round-trip via UNION ALL — returns the first existing row and stops.
+ * Every subquery is tenant-scoped. Add a line when a new planning module ships.
  */
 async function hasPlanningActivity(ctx: TenantContext, tripId: number): Promise<boolean> {
-  // Only tables that EXIST today are queried: expenses (ad-hoc) + checklist.
-  // Checklist is scoped via its parent categories (checklist_items -> category -> trip).
-  const rows = await scopedQuery<{ n: number }>(
-    ctx,
-    `SELECT 1 AS n FROM expenses
-       WHERE {{tenant}} AND trip_id = ? AND source_module = 'adhoc'
+    const rows = await scopedQuery<{ n: number }>(
+        ctx,
+        `SELECT 1 AS n FROM expenses
+       WHERE {{tenant}} AND trip_id = ?
+     UNION ALL
+     SELECT 1 AS n FROM itineraries
+       WHERE {{tenant}} AND trip_id = ?
      UNION ALL
      SELECT 1 AS n FROM checklist_items ci
        JOIN checklist_categories cc ON cc.category_id = ci.category_id
        WHERE cc.trip_id IN (SELECT trip_id FROM trips WHERE {{tenant}} AND trip_id = ?)
      LIMIT 1`,
-    [tripId, tripId],
-  );
-  return rows.length > 0;
+        [tripId, tripId, tripId],
+    );
+    return rows.length > 0;
 }
