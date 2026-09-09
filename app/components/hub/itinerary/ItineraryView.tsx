@@ -963,18 +963,24 @@ export default function ItineraryView({ tripId, currencies, baseCurrency, tripSt
             const orderedIds = newList.map((a) => a.activity_id);
 
             // Persist: assign (if category changed) + reorder. Non-financial → fire, refresh on done.
-            try {
+            const run = onSync ?? ((f: any) => f());
+            await run(async () => {
+                let ok = true;
                 if (catChanged) {
-                    await fetch(`/api/trips/${tripId}/itinerary/${itineraryId}/assign`, {
+                    const r1 = await fetch(`/api/trips/${tripId}/itinerary/${itineraryId}/assign`, {
                         method: 'POST', headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ activity_ids: [activeId], category_id: targetCat }),
                     });
+                    if (!r1.ok) ok = false;
                 }
-                await fetch(`/api/trips/${tripId}/itinerary/${itineraryId}/reorder`, {
+                const r2 = await fetch(`/api/trips/${tripId}/itinerary/${itineraryId}/reorder`, {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ ordered_ids: orderedIds }),
                 });
-            } finally { onChanged(); }
+                if (!r2.ok) ok = false;
+                onChanged();
+                return ok;
+            });
         }
 
         if (ungrouped.length) grouped.push({ cat: null, items: ungrouped });
@@ -997,8 +1003,12 @@ export default function ItineraryView({ tripId, currencies, baseCurrency, tripSt
 
         async function del(activityId: number) {
             if (!confirm('Delete this activity? Its cost is removed from the forecast.')) return;
-            await fetch(`/api/trips/${tripId}/itinerary/${itineraryId}/activities/${activityId}`, { method: 'DELETE' });
-            onChanged();
+            const run = onSync ?? ((f: any) => f());
+            await run(async () => {
+                const res = await fetch(`/api/trips/${tripId}/itinerary/${itineraryId}/activities/${activityId}`, { method: 'DELETE' });
+                onChanged();
+                return res.ok;
+            });
         }
 
         function toggleSel(id: number) {
@@ -1011,11 +1021,17 @@ export default function ItineraryView({ tripId, currencies, baseCurrency, tripSt
             if (n === 0) return;
             if (!confirm(`Delete ${n} ${n === 1 ? 'activity' : 'activities'}? Their costs are removed from the forecast. This can't be undone.`)) return;
             // delete sequentially (each is a financial write); then refresh once.
-            for (const id of selected) {
-                await fetch(`/api/trips/${tripId}/itinerary/${itineraryId}/activities/${id}`, { method: 'DELETE' });
-            }
-            exitSelect();
-            onChanged();
+            const run = onSync ?? ((f: any) => f());
+            await run(async () => {
+                let ok = true;
+                for (const id of selected) {
+                    const res = await fetch(`/api/trips/${tripId}/itinerary/${itineraryId}/activities/${id}`, { method: 'DELETE' });
+                    if (!res.ok) ok = false;
+                }
+                exitSelect();
+                onChanged();
+                return ok;
+            });
         }
 
         async function toggleActive(a: ActivityRow) {
