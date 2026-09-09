@@ -203,3 +203,6 @@ button:not(:disabled) { cursor: pointer; }
 
 .tw-card { transition: transform 0.1s; }
 .tw-card:hover > div { border-color: var(--accent); }
+
+@keyframes tw-spin { to { transform: rotate(360deg); } }
+.tw-spin { animation: tw-spin 0.7s linear infinite; }

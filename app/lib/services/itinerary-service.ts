@@ -251,6 +251,24 @@ export async function deleteRange(ctx: TenantContext, tripId: number, rangeId: n
   );
 }
 
+/** Clear a day: delete all its activities (and their emitted expenses) and its
+ *  categories, but keep the day row — days are pinned to the trip's dates. */
+export async function clearDay(ctx: TenantContext, tripId: number, dayId: number): Promise<void> {
+  const acts = await scopedQuery(
+    ctx, `SELECT activity_id FROM itinerary_activities WHERE {{tenant}} AND trip_id = ? AND day_id = ?`, [tripId, dayId],
+  );
+  for (const a of acts) {
+    const expId = await findActivityExpenseId(ctx, tripId, Number(a.activity_id));
+    if (expId != null) await deleteExpense(ctx, tripId, expId);
+  }
+  await scopedExecute(
+    ctx, `DELETE FROM itinerary_activities WHERE {{tenant}} AND trip_id = ? AND day_id = ?`, [tripId, dayId],
+  );
+  await scopedExecute(
+    ctx, `DELETE FROM itinerary_categories WHERE {{tenant}} AND trip_id = ? AND day_id = ?`, [tripId, dayId],
+  );
+}
+
 // ── Complete (the inner emit gate: status planning → confirmed) ─────────────
 
 /** Flip a day to 'confirmed' (or back to 'planning'), then re-sync every

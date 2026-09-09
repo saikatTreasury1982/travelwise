@@ -340,6 +340,19 @@ export default function ItineraryView({ tripId, currencies, baseCurrency, tripSt
         const [assistCounts, setAssistCounts] = useState<Record<number, number>>({});
         const [selRanges, setSelRanges] = useState(false);
         const [selectedRanges, setSelectedRanges] = useState<Set<number>>(new Set());
+        const [sync, setSync] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+
+        const runSync = useCallback(async (fn: () => Promise<boolean | void>) => {
+            setSync('saving');
+            try {
+                const ok = await fn();
+                setSync(ok === false ? 'error' : 'saved');
+            } catch {
+                setSync('error');
+            } finally {
+                setTimeout(() => setSync((s) => (s === 'saving' ? s : 'idle')), 1600);
+            }
+        }, []);
 
         const loadAssistCounts = useCallback(async () => {
             try {
@@ -395,10 +408,14 @@ export default function ItineraryView({ tripId, currencies, baseCurrency, tripSt
 
             // 2. persist in the background; reconcile only on failure
             const orderedIds = reordered.map((b) => b.day_range_id!).filter((x) => x != null);
-            fetch(`/api/trips/${tripId}/itinerary/${itineraryId}/reorder`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ kind: 'range', ordered_ids: orderedIds }),
-            }).then((res) => { if (!res.ok) loadTree(); }).catch(() => loadTree());
+            runSync(async () => {
+                const res = await fetch(`/api/trips/${tripId}/itinerary/${itineraryId}/reorder`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ kind: 'range', ordered_ids: orderedIds }),
+                });
+                if (!res.ok) loadTree();
+                return res.ok;
+            });
         }
 
         const navSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
@@ -443,9 +460,11 @@ export default function ItineraryView({ tripId, currencies, baseCurrency, tripSt
             setLocalBuckets(next);
             setActiveBucket(Math.max(0, Math.min(idx, next.length - 1)));
 
-            const res = await fetch(`/api/trips/${tripId}/itinerary/${itineraryId}/ranges/${rangeId}`, { method: 'DELETE' });
-            if (!res.ok) { alert('Could not delete that range.'); loadTree(); return; }
-            loadTree();   // refresh unplanned days + forecast
+            await runSync(async () => {
+                const res = await fetch(`/api/trips/${tripId}/itinerary/${itineraryId}/ranges/${rangeId}`, { method: 'DELETE' });
+                loadTree();
+                return res.ok;
+            });
         }
 
         function toggleRangeSel(id: number) {
@@ -461,11 +480,16 @@ export default function ItineraryView({ tripId, currencies, baseCurrency, tripSt
             // optimistic
             setLocalBuckets((prev) => prev.filter((b) => !selectedRanges.has(b.day_range_id!)));
             setActiveBucket(0);
-            for (const id of ids) {
-                await fetch(`/api/trips/${tripId}/itinerary/${itineraryId}/ranges/${id}`, { method: 'DELETE' });
-            }
-            exitRangeSelect();
-            loadTree();
+            await runSync(async () => {
+                let ok = true;
+                for (const id of ids) {
+                    const res = await fetch(`/api/trips/${tripId}/itinerary/${itineraryId}/ranges/${id}`, { method: 'DELETE' });
+                    if (!res.ok) ok = false;
+                }
+                exitRangeSelect();
+                loadTree();
+                return ok;
+            });
         }
 
         async function submitRange(startDay: number, endDay: number, name: string) {
@@ -522,17 +546,29 @@ export default function ItineraryView({ tripId, currencies, baseCurrency, tripSt
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
                         All plans
                     </button>
+                    {sync !== 'idle' && (
+                        <span className="text-[12px] font-medium inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full"
+                            style={{
+                                background: sync === 'error' ? 'color-mix(in srgb, var(--danger) 12%, transparent)' : 'color-mix(in srgb, var(--accent) 12%, transparent)',
+                                color: sync === 'error' ? 'var(--danger)' : 'var(--accent-deep)',
+                            }}>
+                            {sync === 'saving' && <><span className="tw-spin" style={{ width: 10, height: 10, border: '2px solid currentColor', borderTopColor: 'transparent', borderRadius: '50%', display: 'inline-block' }} />Saving…</>}
+                            {sync === 'saved' && <>✓ Saved</>}
+                            {sync === 'error' && <>Couldn’t save</>}
+                        </span>
+                    )}
                     <div className="ml-auto flex items-center gap-3">
                         {finalized ? (
                             <span className="text-[12.5px] font-semibold inline-flex items-center gap-1.5" style={{ color: 'var(--success)' }}>
                                 ✓ Finalized · feeds your forecast
                             </span>
                         ) : (
-                            <button onClick={async () => {
-                                await fetch(`/api/trips/${tripId}/itinerary/${itineraryId}/finalize`, { method: 'POST' });
+                            <button disabled={sync === 'saving'} onClick={() => runSync(async () => {
+                                const res = await fetch(`/api/trips/${tripId}/itinerary/${itineraryId}/finalize`, { method: 'POST' });
                                 onListChanged();
-                            }} className="tw-btn text-[13px] font-semibold px-4 py-2 rounded-lg"
-                                style={{ background: 'var(--success)', color: '#fff', border: 'none' }}>
+                                return res.ok;
+                            })} className="tw-btn text-[13px] font-semibold px-4 py-2 rounded-lg"
+                                style={{ background: 'var(--success)', color: '#fff', border: 'none', opacity: sync === 'saving' ? 0.5 : 1 }}>
                                 Finalize this plan →
                             </button>
                         )}
@@ -721,6 +757,7 @@ export default function ItineraryView({ tripId, currencies, baseCurrency, tripSt
                                     tripId={tripId} itineraryId={itineraryId} bucket={current}
                                     roster={roster} currencies={currencies} baseCurrency={baseCurrency}
                                     onChanged={loadTree}
+                                    onSync={runSync}
                                     assistCounts={assistCounts}
                                     onOpenAssist={(activityId, name) => setAssistFor({ activityId, name })}
                                 />
@@ -761,10 +798,11 @@ export default function ItineraryView({ tripId, currencies, baseCurrency, tripSt
     }
 
     function BucketPanel({
-        tripId, itineraryId, bucket, roster, currencies, baseCurrency, onChanged, assistCounts, onOpenAssist,
+        tripId, itineraryId, bucket, roster, currencies, baseCurrency, onChanged, onSync, assistCounts, onOpenAssist,
     }: {
         tripId: number; itineraryId: number; bucket: BucketNode;
         roster: Traveler[]; currencies: Currency[]; baseCurrency: string; onChanged: () => void;
+        onSync?: (fn: () => Promise<boolean | void>) => Promise<void>;
         assistCounts?: Record<number, number>;
         onOpenAssist?: (activityId: number, name: string) => void;
     }) {
@@ -809,11 +847,15 @@ export default function ItineraryView({ tripId, currencies, baseCurrency, tripSt
             try {
                 const statusPath = bucket.kind === 'day'
                     ? `days/${bucket.day_id}/status` : `ranges/${bucket.day_range_id}/status`;
-                await fetch(`/api/trips/${tripId}/itinerary/${itineraryId}/${statusPath}`, {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ status: 'confirmed' }),
+                const run = onSync ?? ((f: any) => f());
+                await run(async () => {
+                    const res = await fetch(`/api/trips/${tripId}/itinerary/${itineraryId}/${statusPath}`, {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ status: 'confirmed' }),
+                    });
+                    onChanged();
+                    return res.ok;
                 });
-                onChanged();
             } finally { setCompleting(false); }
         }
 
@@ -938,6 +980,19 @@ export default function ItineraryView({ tripId, currencies, baseCurrency, tripSt
         if (ungrouped.length) grouped.push({ cat: null, items: ungrouped });
         for (const c of cats) {
             grouped.push({ cat: c, items: bucket.activities.filter((a) => a.category_id === c.category_id) });
+        }
+
+        async function clearThisDay() {
+            if (bucket.kind !== 'day') return;
+            const n = bucket.activities.length;
+            if (n === 0) return;
+            if (!confirm(`Clear ${bucket.title || `Day ${bucket.day_number}`}? All ${n} ${n === 1 ? 'activity' : 'activities'} and its categories will be deleted, and their costs removed from your forecast. The day itself stays. This can't be undone.`)) return;
+            const run = onSync ?? ((f: any) => f());
+            await run(async () => {
+                const res = await fetch(`/api/trips/${tripId}/itinerary/${itineraryId}/days/${bucket.day_id}`, { method: 'DELETE' });
+                if (res.ok) onChanged(); else alert('Could not clear that day.');
+                return res.ok;
+            });
         }
 
         async function del(activityId: number) {
@@ -1089,6 +1144,11 @@ export default function ItineraryView({ tripId, currencies, baseCurrency, tripSt
                                 className="tw-link text-[12px] font-semibold"
                                 style={{ color: selecting ? 'var(--accent-deep)' : 'var(--ink-soft)' }}>
                                 {selecting ? '✓ Done' : '☑ Select'}
+                            </button>
+                        )}
+                        {bucket.kind === 'day' && bucket.activities.length > 0 && !selecting && (
+                            <button onClick={clearThisDay} className="tw-link text-[12px]" style={{ color: 'var(--danger)' }}>
+                                Clear day
                             </button>
                         )}
                         {bucketTotal > 0 && (
