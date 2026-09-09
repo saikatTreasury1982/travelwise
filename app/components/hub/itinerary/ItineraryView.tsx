@@ -6,6 +6,9 @@ import SpendRhythm from './SpendRhythm';
 import ActivityAssistSheet from './ActivityAssistSheet';
 import type { ItineraryTree, BucketNode } from '@/app/lib/services/itinerary-service';
 import AIDraftFlow from './AIDraftFlow';
+import { DndContext, PointerSensor, useSensor, useSensors, closestCorners, type DragEndEvent } from '@dnd-kit/core';
+import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 interface Traveler { traveler_id: number; traveler_name: string; is_primary: number; is_cost_sharer: number; is_active: number; }
 interface Currency { currency_code: string; currency_name: string; currency_symbol?: string | null; }
@@ -335,6 +338,8 @@ export default function ItineraryView({ tripId, currencies, baseCurrency, tripSt
         const [view, setView] = useState<'list' | 'timeline'>('list');
         const [assistFor, setAssistFor] = useState<{ activityId: number; name: string } | null>(null);
         const [assistCounts, setAssistCounts] = useState<Record<number, number>>({});
+        const [selRanges, setSelRanges] = useState(false);
+        const [selectedRanges, setSelectedRanges] = useState<Set<number>>(new Set());
 
         const loadAssistCounts = useCallback(async () => {
             try {
@@ -394,6 +399,73 @@ export default function ItineraryView({ tripId, currencies, baseCurrency, tripSt
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ kind: 'range', ordered_ids: orderedIds }),
             }).then((res) => { if (!res.ok) loadTree(); }).catch(() => loadTree());
+        }
+
+        const navSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+
+        function handleNavDragEnd(e: DragEndEvent) {
+            const { active, over } = e;
+            if (!over || active.id === over.id) return;
+            const keyOf = (b: BucketNode) => `r${b.day_range_id}`;
+            const fromIdx = localBuckets.findIndex((b) => keyOf(b) === active.id);
+            const toIdx = localBuckets.findIndex((b) => keyOf(b) === over.id);
+            if (fromIdx < 0 || toIdx < 0) return;
+
+            const reordered = [...localBuckets];
+            const [moved] = reordered.splice(fromIdx, 1);
+            reordered.splice(toIdx, 0, moved);
+            setLocalBuckets(reordered);                       // optimistic
+
+            const movedKey = moved.day_range_id ?? moved.day_id;
+            const newIdx = reordered.findIndex((b) => (b.day_range_id ?? b.day_id) === movedKey);
+            if (newIdx >= 0) setActiveBucket(newIdx);
+
+            const orderedIds = reordered.map((b) => b.day_range_id!).filter((x) => x != null);
+            fetch(`/api/trips/${tripId}/itinerary/${itineraryId}/reorder`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ kind: 'range', ordered_ids: orderedIds }),
+            }).then((res) => { if (!res.ok) loadTree(); }).catch(() => loadTree());
+        }
+
+        async function deleteRange(rangeId: number) {
+            const b = localBuckets.find((x) => x.day_range_id === rangeId);
+            if (!b) return;
+            const label = b.range_name || `Days ${b.start_day}–${b.end_day}`;
+            const nAct = b.activities.length;
+            const msg = nAct > 0
+                ? `Delete "${label}"? Its ${nAct} ${nAct === 1 ? 'activity' : 'activities'} and any categories will be deleted, and their costs removed from your forecast. This can't be undone.`
+                : `Delete "${label}"? This can't be undone.`;
+            if (!confirm(msg)) return;
+
+            // optimistic: drop it, reselect a neighbour
+            const idx = localBuckets.findIndex((x) => x.day_range_id === rangeId);
+            const next = localBuckets.filter((x) => x.day_range_id !== rangeId);
+            setLocalBuckets(next);
+            setActiveBucket(Math.max(0, Math.min(idx, next.length - 1)));
+
+            const res = await fetch(`/api/trips/${tripId}/itinerary/${itineraryId}/ranges/${rangeId}`, { method: 'DELETE' });
+            if (!res.ok) { alert('Could not delete that range.'); loadTree(); return; }
+            loadTree();   // refresh unplanned days + forecast
+        }
+
+        function toggleRangeSel(id: number) {
+            setSelectedRanges((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
+        }
+        function exitRangeSelect() { setSelRanges(false); setSelectedRanges(new Set()); }
+
+        async function bulkDeleteRanges() {
+            const ids = [...selectedRanges];
+            if (ids.length === 0) return;
+            const n = ids.length;
+            if (!confirm(`Delete ${n} ${n === 1 ? 'range' : 'ranges'}? Their activities and categories will be deleted, and their costs removed from your forecast. This can't be undone.`)) return;
+            // optimistic
+            setLocalBuckets((prev) => prev.filter((b) => !selectedRanges.has(b.day_range_id!)));
+            setActiveBucket(0);
+            for (const id of ids) {
+                await fetch(`/api/trips/${tripId}/itinerary/${itineraryId}/ranges/${id}`, { method: 'DELETE' });
+            }
+            exitRangeSelect();
+            loadTree();
         }
 
         async function submitRange(startDay: number, endDay: number, name: string) {
@@ -532,40 +604,86 @@ export default function ItineraryView({ tripId, currencies, baseCurrency, tripSt
                     {/* ── Left rail: navigator ── */}
                     <div style={{ width: 240, flexShrink: 0 }}>
                         <div className="rounded-xl overflow-hidden" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
-                            <div className="px-4 py-2.5 text-[11px] uppercase" style={{ color: 'var(--ink-faint)', letterSpacing: '0.4px', borderBottom: '1px solid var(--divider)' }}>
-                                {tree.mode === 'day' ? `${buckets.length} days` : `${buckets.length} ${buckets.length === 1 ? 'stretch' : 'stretches'}`}
-                            </div>
-                            {buckets.map((b, i) => (
-                                <div key={b.kind === 'day' ? `d${b.day_id}` : `r${b.day_range_id}`}
-                                    className="flex items-stretch"
-                                    style={{
-                                        borderTop: i === 0 ? 'none' : '1px solid var(--divider)',
-                                        background: i === activeBucket ? 'color-mix(in srgb, var(--accent) 8%, transparent)' : 'transparent',
-                                    }}>
-                                    <button onClick={() => setActiveBucket(i)}
-                                        className="flex-1 text-left px-4 py-3" style={{ cursor: 'pointer', background: 'transparent', border: 'none' }}>
-                                        <div className="flex items-center gap-2">
-                                            <span className="text-[14px] font-semibold" style={{ color: i === activeBucket ? 'var(--accent-deep)' : 'var(--ink)' }}>
-                                                {bucketLabel(b)}
-                                            </span>
-                                            {b.status === 'confirmed' && <span className="text-[10px]" style={{ color: 'var(--success)' }}>✓</span>}
-                                        </div>
-                                        <div className="text-[11.5px] mt-0.5" style={{ color: 'var(--ink-faint)' }}>{bucketSub(b)}</div>
+                            <div className="px-4 py-2.5 flex items-center gap-2" style={{ borderBottom: '1px solid var(--divider)' }}>
+                                <span className="text-[11px] uppercase" style={{ color: 'var(--ink-faint)', letterSpacing: '0.4px' }}>
+                                    {tree.mode === 'day' ? `${buckets.length} days` : `${buckets.length} ${buckets.length === 1 ? 'stretch' : 'stretches'}`}
+                                </span>
+                                {isRange && buckets.length > 1 && (
+                                    <button onClick={() => selRanges ? exitRangeSelect() : setSelRanges(true)}
+                                        className="tw-link text-[11px] font-semibold ml-auto"
+                                        style={{ color: selRanges ? 'var(--accent-deep)' : 'var(--ink-soft)' }}>
+                                        {selRanges ? '✓ Done' : '☑ Select'}
                                     </button>
-
-                                    {/* Reorder arrows — range mode only */}
-                                    {isRange && buckets.length > 1 && (
-                                        <div className="flex flex-col justify-center pr-2" style={{ gap: 2 }}>
-                                            <button onClick={() => moveRange(i, -1)} disabled={i === 0}
-                                                title="Move up" className="tw-link"
-                                                style={{ fontSize: 11, lineHeight: 1, color: i === 0 ? 'var(--border)' : 'var(--ink-soft)', cursor: i === 0 ? 'default' : 'pointer' }}>▲</button>
-                                            <button onClick={() => moveRange(i, 1)} disabled={i === buckets.length - 1}
-                                                title="Move down" className="tw-link"
-                                                style={{ fontSize: 11, lineHeight: 1, color: i === buckets.length - 1 ? 'var(--border)' : 'var(--ink-soft)', cursor: i === buckets.length - 1 ? 'default' : 'pointer' }}>▼</button>
+                                )}
+                            </div>
+                            {isRange && buckets.length > 1 && selRanges ? (
+                                buckets.map((b, i) => {
+                                    const on = selectedRanges.has(b.day_range_id!);
+                                    return (
+                                        <div key={`r${b.day_range_id}`}
+                                            onClick={() => toggleRangeSel(b.day_range_id!)}
+                                            className="flex items-center gap-2 px-3 py-3"
+                                            style={{ borderTop: i === 0 ? 'none' : '1px solid var(--divider)', cursor: 'pointer', background: on ? 'color-mix(in srgb, var(--accent) 8%, transparent)' : 'transparent' }}>
+                                            <span style={{
+                                                width: 18, height: 18, borderRadius: 5, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: '#fff',
+                                                background: on ? 'var(--accent)' : 'transparent', border: `1.5px solid ${on ? 'var(--accent)' : 'var(--border)'}`
+                                            }}>
+                                                {on ? '✓' : ''}
+                                            </span>
+                                            <div className="flex-1 min-w-0">
+                                                <div className="text-[14px] font-semibold" style={{ color: 'var(--ink)' }}>{bucketLabel(b)}</div>
+                                                <div className="text-[11.5px] mt-0.5" style={{ color: 'var(--ink-faint)' }}>{bucketSub(b)}</div>
+                                            </div>
                                         </div>
-                                    )}
+                                    );
+                                })
+                            ) : isRange && buckets.length > 1 ? (
+                                <DndContext sensors={navSensors} collisionDetection={closestCorners} onDragEnd={handleNavDragEnd}>
+                                    <SortableContext items={buckets.map((b) => `r${b.day_range_id}`)} strategy={verticalListSortingStrategy}>
+                                        {buckets.map((b, i) => (
+                                            <SortableRangeRow key={`r${b.day_range_id}`} id={`r${b.day_range_id}`} active={i === activeBucket} onDelete={() => deleteRange(b.day_range_id!)}>
+                                                <button onClick={() => setActiveBucket(i)}
+                                                    className="w-full text-left px-3 py-3" style={{ cursor: 'pointer', background: 'transparent', border: 'none' }}>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-[14px] font-semibold" style={{ color: i === activeBucket ? 'var(--accent-deep)' : 'var(--ink)' }}>
+                                                            {bucketLabel(b)}
+                                                        </span>
+                                                        {b.status === 'confirmed' && <span className="text-[10px]" style={{ color: 'var(--success)' }}>✓</span>}
+                                                    </div>
+                                                    <div className="text-[11.5px] mt-0.5" style={{ color: 'var(--ink-faint)' }}>{bucketSub(b)}</div>
+                                                </button>
+                                            </SortableRangeRow>
+                                        ))}
+                                    </SortableContext>
+                                </DndContext>
+                            ) : (
+                                buckets.map((b, i) => (
+                                    <div key={b.kind === 'day' ? `d${b.day_id}` : `r${b.day_range_id}`}
+                                        className="flex items-stretch"
+                                        style={{
+                                            borderTop: i === 0 ? 'none' : '1px solid var(--divider)',
+                                            background: i === activeBucket ? 'color-mix(in srgb, var(--accent) 8%, transparent)' : 'transparent',
+                                        }}>
+                                        <button onClick={() => setActiveBucket(i)}
+                                            className="flex-1 text-left px-4 py-3" style={{ cursor: 'pointer', background: 'transparent', border: 'none' }}>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-[14px] font-semibold" style={{ color: i === activeBucket ? 'var(--accent-deep)' : 'var(--ink)' }}>
+                                                    {bucketLabel(b)}
+                                                </span>
+                                                {b.status === 'confirmed' && <span className="text-[10px]" style={{ color: 'var(--success)' }}>✓</span>}
+                                            </div>
+                                            <div className="text-[11.5px] mt-0.5" style={{ color: 'var(--ink-faint)' }}>{bucketSub(b)}</div>
+                                        </button>
+                                    </div>
+                                ))
+                            )}
+
+                            {selRanges && selectedRanges.size > 0 && (
+                                <div className="flex items-center gap-2 px-3 py-2.5" style={{ borderTop: '1px solid var(--divider)', background: 'var(--panel)', color: 'var(--panel-ink)' }}>
+                                    <span className="text-[12px] font-bold">{selectedRanges.size} selected</span>
+                                    <button onClick={bulkDeleteRanges} className="tw-btn text-[12px] font-semibold px-2.5 py-1 rounded-md ml-auto" style={{ background: 'var(--danger)', color: '#fff', border: 'none' }}>🗑 Delete</button>
                                 </div>
-                            ))}
+                            )}
 
                             {/* Range-mode: unplanned days + inline add-range form */}
                             {isRange && (
@@ -652,6 +770,8 @@ export default function ItineraryView({ tripId, currencies, baseCurrency, tripSt
     }) {
         const [adding, setAdding] = useState(false);
         const [editingId, setEditingId] = useState<number | null>(null);
+        const [selecting, setSelecting] = useState(false);
+        const [selected, setSelected] = useState<Set<number>>(new Set());
         const [completing, setCompleting] = useState(false);
         const [groupPreview, setGroupPreview] = useState<{ category_name: string; activity_ids: number[] }[] | null>(null);
         const isConfirmed = bucket.status === 'confirmed';
@@ -756,6 +876,65 @@ export default function ItineraryView({ tripId, currencies, baseCurrency, tripSt
         const cats = bucket.categories;
         const grouped: { cat: CategoryRow | null; items: ActivityRow[] }[] = [];
         const ungrouped = bucket.activities.filter((a) => a.category_id == null);
+
+        const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+
+        // Map each droppable group to a stable id: 'cat:<id>' or 'ungrouped'.
+        const groupId = (cat: CategoryRow | null) => cat ? `cat:${cat.category_id}` : 'ungrouped';
+
+        async function handleDragEnd(e: DragEndEvent) {
+            const activeId = Number(e.active.id);
+            const over = e.over?.id;
+            if (over == null) return;
+
+            // Resolve the target category from the drop target.
+            // over can be a group id ('cat:5' / 'ungrouped') or another activity id (number).
+            let targetCat: number | null;
+            let overActId: number | null = null;
+            if (typeof over === 'string' && over.startsWith('cat:')) targetCat = Number(over.slice(4));
+            else if (over === 'ungrouped') targetCat = null;
+            else { // dropped over an activity — inherit that activity's category, insert near it
+                overActId = Number(over);
+                const overAct = bucket.activities.find((a) => a.activity_id === overActId);
+                if (!overAct) return;
+                targetCat = overAct.category_id ?? null;
+            }
+
+            const moved = bucket.activities.find((a) => a.activity_id === activeId);
+            if (!moved) return;
+            const catChanged = (moved.category_id ?? null) !== targetCat;
+
+            // Build the new full-bucket order (all activities, top-to-bottom as rendered),
+            // with `moved` placed into the target group near the drop point.
+            const rest = bucket.activities.filter((a) => a.activity_id !== activeId);
+            let insertAt: number;
+            if (overActId != null) {
+                const idx = rest.findIndex((a) => a.activity_id === overActId);
+                insertAt = idx < 0 ? rest.length : idx;
+            } else {
+                // dropped on a group container → end of that group
+                const lastOfGroup = rest.map((a, i) => ((a.category_id ?? null) === targetCat ? i : -1)).filter((i) => i >= 0).pop();
+                insertAt = lastOfGroup == null ? rest.length : lastOfGroup + 1;
+            }
+            const movedUpdated = { ...moved, category_id: targetCat };
+            const newList = [...rest.slice(0, insertAt), movedUpdated, ...rest.slice(insertAt)];
+            const orderedIds = newList.map((a) => a.activity_id);
+
+            // Persist: assign (if category changed) + reorder. Non-financial → fire, refresh on done.
+            try {
+                if (catChanged) {
+                    await fetch(`/api/trips/${tripId}/itinerary/${itineraryId}/assign`, {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ activity_ids: [activeId], category_id: targetCat }),
+                    });
+                }
+                await fetch(`/api/trips/${tripId}/itinerary/${itineraryId}/reorder`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ordered_ids: orderedIds }),
+                });
+            } finally { onChanged(); }
+        }
+
         if (ungrouped.length) grouped.push({ cat: null, items: ungrouped });
         for (const c of cats) {
             grouped.push({ cat: c, items: bucket.activities.filter((a) => a.category_id === c.category_id) });
@@ -766,6 +945,24 @@ export default function ItineraryView({ tripId, currencies, baseCurrency, tripSt
             await fetch(`/api/trips/${tripId}/itinerary/${itineraryId}/activities/${activityId}`, { method: 'DELETE' });
             onChanged();
         }
+
+        function toggleSel(id: number) {
+            setSelected((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
+        }
+        function exitSelect() { setSelecting(false); setSelected(new Set()); }
+
+        async function bulkDelete() {
+            const n = selected.size;
+            if (n === 0) return;
+            if (!confirm(`Delete ${n} ${n === 1 ? 'activity' : 'activities'}? Their costs are removed from the forecast. This can't be undone.`)) return;
+            // delete sequentially (each is a financial write); then refresh once.
+            for (const id of selected) {
+                await fetch(`/api/trips/${tripId}/itinerary/${itineraryId}/activities/${id}`, { method: 'DELETE' });
+            }
+            exitSelect();
+            onChanged();
+        }
+
         async function toggleActive(a: ActivityRow) {
             await fetch(`/api/trips/${tripId}/itinerary/${itineraryId}/activities/${a.activity_id}`, {
                 method: 'PUT', headers: { 'Content-Type': 'application/json' },
@@ -777,6 +974,57 @@ export default function ItineraryView({ tripId, currencies, baseCurrency, tripSt
                 }),
             });
             onChanged();
+        }
+
+        function renderActivityRow(a: ActivityRow) {
+            return (
+                <div
+                    onClick={() => { if (selecting) toggleSel(a.activity_id); }}
+                    className="rounded-lg px-3 py-2.5 flex items-center gap-3"
+                    style={{
+                        border: `1px solid ${selecting && selected.has(a.activity_id) ? 'var(--accent)' : 'var(--border)'}`,
+                        background: selecting && selected.has(a.activity_id) ? 'color-mix(in srgb, var(--accent) 6%, transparent)' : 'var(--surface)',
+                        opacity: a.is_active === 1 ? 1 : 0.5,
+                        cursor: selecting ? 'pointer' : 'default',
+                    }}>
+                    {selecting ? (
+                        <span style={{
+                            width: 18, height: 18, borderRadius: 5, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: '#fff',
+                            background: selected.has(a.activity_id) ? 'var(--accent)' : 'transparent',
+                            border: `1.5px solid ${selected.has(a.activity_id) ? 'var(--accent)' : 'var(--border)'}`
+                        }}>
+                            {selected.has(a.activity_id) ? '✓' : ''}
+                        </span>
+                    ) : (
+                        <button onClick={() => toggleActive(a)} title={a.is_active === 1 ? 'Exclude from forecast' : 'Include in forecast'}
+                            className="tw-link text-[13px]" style={{ color: a.is_active === 1 ? 'var(--success)' : 'var(--ink-faint)' }}>
+                            {a.is_active === 1 ? '◉' : '○'}
+                        </button>
+                    )}
+                    <div className="flex-1 min-w-0">
+                        <div className="text-[14px]" style={{ color: 'var(--ink)' }}>{a.activity_name}</div>
+                        <div className="text-[11.5px]" style={{ color: 'var(--ink-faint)' }}>
+                            {a.start_time ? a.start_time : ''}{a.end_time ? `–${a.end_time}` : ''}
+                            {a.bearer_traveler_ids.length > 0 && <span> · {a.bearer_traveler_ids.map(nameOf).join(', ')}</span>}
+                        </div>
+                    </div>
+                    {resolved(a) != null && (
+                        <span className="text-[13px] font-semibold" style={{ color: 'var(--accent-deep)' }}>
+                            {a.currency_code} {resolved(a)!.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                            {a.cost_type === 'per_person' && <span className="text-[10px] font-normal" style={{ color: 'var(--ink-faint)' }}> ({a.headcount || 1}p)</span>}
+                        </span>
+                    )}
+                    {!selecting && (<>
+                        <button onClick={() => setEditingId(a.activity_id)} className="tw-link text-[12px]" style={{ color: 'var(--accent-deep)' }}>Edit</button>
+                        <button onClick={() => del(a.activity_id)} className="tw-link text-[12px]" style={{ color: 'var(--ink-faint)' }}>🗑</button>
+                        {(assistCounts?.[a.activity_id] ?? 0) > 0 ? (
+                            <button onClick={() => onOpenAssist?.(a.activity_id, a.activity_name)} className="tw-link text-[11px] px-1.5" title="Saved help" style={{ color: 'var(--accent-deep)' }}>✨ {assistCounts![a.activity_id]}</button>
+                        ) : (
+                            <button onClick={() => onOpenAssist?.(a.activity_id, a.activity_name)} className="tw-link text-[13px] px-1" title="Ask the co-pilot" style={{ color: 'var(--ink-faint)' }}>✨</button>
+                        )}
+                    </>)}
+                </div>
+            );
         }
 
         function money(n: number) {
@@ -835,9 +1083,18 @@ export default function ItineraryView({ tripId, currencies, baseCurrency, tripSt
                             {bucket.status === 'confirmed' && <span className="ml-2" style={{ color: 'var(--success)' }}>· ✓ Completed</span>}
                         </div>
                     </div>
-                    {bucketTotal > 0 && (
-                        <span className="ml-auto text-[15px] font-extrabold" style={{ color: 'var(--accent-deep)' }}>{money(bucketTotal)}</span>
-                    )}
+                    <div className="ml-auto flex items-center gap-3">
+                        {bucket.activities.length > 0 && (
+                            <button onClick={() => selecting ? exitSelect() : setSelecting(true)}
+                                className="tw-link text-[12px] font-semibold"
+                                style={{ color: selecting ? 'var(--accent-deep)' : 'var(--ink-soft)' }}>
+                                {selecting ? '✓ Done' : '☑ Select'}
+                            </button>
+                        )}
+                        {bucketTotal > 0 && (
+                            <span className="text-[15px] font-extrabold" style={{ color: 'var(--accent-deep)' }}>{money(bucketTotal)}</span>
+                        )}
+                    </div>
                 </div>
 
                 {/* activity groups */}
@@ -846,59 +1103,36 @@ export default function ItineraryView({ tripId, currencies, baseCurrency, tripSt
                         <p className="text-[13px] text-center py-6" style={{ color: 'var(--ink-faint)' }}>No activities yet. Add your first below.</p>
                     )}
 
-                    {grouped.map((g) => (
-                        <div key={g.cat ? `c${g.cat.category_id}` : 'ungrouped'} className="mb-4">
-                            {g.cat && (
-                                <div className="text-[11px] uppercase mb-2 font-semibold" style={{ color: 'var(--accent-deep)', letterSpacing: '0.4px' }}>
-                                    {g.cat.category_name} <span style={{ color: 'var(--ink-faint)', fontWeight: 400 }}>({g.items.length})</span>
-                                </div>
-                            )}
-                            <div className="space-y-1.5">
-                                {g.items.map((a) => (
-                                    editingId === a.activity_id ? (
-                                        <ActivityForm key={a.activity_id}
-                                            tripId={tripId} itineraryId={itineraryId} bucketBody={bucketBody}
-                                            eligible={eligible} currencies={currencies} baseCurrency={baseCurrency}
-                                            existing={a}
-                                            onDone={() => { setEditingId(null); onChanged(); }}
-                                            onCancel={() => setEditingId(null)} />
-                                    ) : (
-                                        <div key={a.activity_id} className="rounded-lg px-3 py-2.5 flex items-center gap-3"
-                                            style={{ border: '1px solid var(--border)', opacity: a.is_active === 1 ? 1 : 0.5 }}>
-                                            <button onClick={() => toggleActive(a)} title={a.is_active === 1 ? 'Exclude from forecast' : 'Include in forecast'}
-                                                className="tw-link text-[13px]" style={{ color: a.is_active === 1 ? 'var(--success)' : 'var(--ink-faint)' }}>
-                                                {a.is_active === 1 ? '◉' : '○'}
-                                            </button>
-                                            <div className="flex-1 min-w-0">
-                                                <div className="text-[14px]" style={{ color: 'var(--ink)' }}>{a.activity_name}</div>
-                                                <div className="text-[11.5px]" style={{ color: 'var(--ink-faint)' }}>
-                                                    {a.start_time ? a.start_time : ''}{a.end_time ? `–${a.end_time}` : ''}
-                                                    {a.bearer_traveler_ids.length > 0 && <span> · {a.bearer_traveler_ids.map(nameOf).join(', ')}</span>}
-                                                </div>
-                                            </div>
-                                            {resolved(a) != null && (
-                                                <span className="text-[13px] font-semibold" style={{ color: 'var(--accent-deep)' }}>
-                                                    {a.currency_code} {resolved(a)!.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                                                    {a.cost_type === 'per_person' && <span className="text-[10px] font-normal" style={{ color: 'var(--ink-faint)' }}> ({a.headcount || 1}p)</span>}
-                                                </span>
-                                            )}
-                                            <button onClick={() => setEditingId(a.activity_id)} className="tw-link text-[12px]" style={{ color: 'var(--accent-deep)' }}>Edit</button>
-                                            <button onClick={() => del(a.activity_id)} className="tw-link text-[12px]" style={{ color: 'var(--ink-faint)' }}>🗑</button>
-                                            {(assistCounts?.[a.activity_id] ?? 0) > 0 ? (
-                                                <button onClick={() => onOpenAssist?.(a.activity_id, a.activity_name)} className="tw-link text-[11px] px-1.5"
-                                                    title="Saved help" style={{ color: 'var(--accent-deep)' }}>
-                                                    ✨ {assistCounts![a.activity_id]}
-                                                </button>
+                    <DndContext sensors={sensors} collisionDetection={closestCorners} onDragEnd={selecting ? undefined : handleDragEnd}>
+                        {grouped.map((g) => (
+                            <div key={g.cat ? `c${g.cat.category_id}` : 'ungrouped'} className="mb-4">
+                                {g.cat && (
+                                    <CategoryHeader cat={g.cat} count={g.items.length} tripId={tripId} itineraryId={itineraryId} onChanged={onChanged} />
+                                )}
+                                {!g.cat && g.items.length > 0 && (
+                                    <div className="text-[11px] uppercase mb-2 font-semibold" style={{ color: 'var(--ink-faint)', letterSpacing: '0.4px' }}>Ungrouped ({g.items.length})</div>
+                                )}
+                                <SortableContext id={groupId(g.cat)} items={g.items.map((a) => a.activity_id)} strategy={verticalListSortingStrategy}>
+                                    <DroppableGroup id={groupId(g.cat)}>
+                                        {g.items.map((a) => (
+                                            editingId === a.activity_id ? (
+                                                <ActivityForm key={a.activity_id}
+                                                    tripId={tripId} itineraryId={itineraryId} bucketBody={bucketBody}
+                                                    eligible={eligible} currencies={currencies} baseCurrency={baseCurrency}
+                                                    existing={a}
+                                                    onDone={() => { setEditingId(null); onChanged(); }}
+                                                    onCancel={() => setEditingId(null)} />
                                             ) : (
-                                                <button onClick={() => onOpenAssist?.(a.activity_id, a.activity_name)} className="tw-link text-[13px] px-1"
-                                                    title="Ask the co-pilot" style={{ color: 'var(--ink-faint)' }}>✨</button>
-                                            )}
-                                        </div>
-                                    )
-                                ))}
+                                                <SortableActivityRow key={a.activity_id} id={a.activity_id} disabled={selecting}>
+                                                    {renderActivityRow(a)}
+                                                </SortableActivityRow>
+                                            )
+                                        ))}
+                                    </DroppableGroup>
+                                </SortableContext>
                             </div>
-                        </div>
-                    ))}
+                        ))}
+                    </DndContext>
 
                     {/* add form */}
                     {adding ? (
@@ -949,29 +1183,151 @@ export default function ItineraryView({ tripId, currencies, baseCurrency, tripSt
                 </div>
 
                 {/* grouping preview (AI proposes; user accepts/renames) — wired for the AI pass */}
-                {groupPreview && groupPreview.length > 0 && (
-                    <div className="px-5 py-4" style={{ borderTop: '1px solid var(--divider)', background: 'color-mix(in srgb, var(--accent) 4%, var(--surface))' }}>
-                        <div className="text-[13px] font-semibold mb-2" style={{ color: 'var(--ink)' }}>Suggested grouping</div>
-                        <div className="space-y-2 mb-3">
-                            {groupPreview.map((g, i) => (
-                                <div key={i} className="rounded-lg px-3 py-2" style={{ border: '1px solid var(--border)' }}>
-                                    <input defaultValue={g.category_name}
-                                        onChange={(e) => { groupPreview[i].category_name = e.target.value; }}
-                                        className="text-[13px] font-semibold mb-1"
-                                        style={{ background: 'transparent', border: 'none', outline: 'none', color: 'var(--accent-deep)', width: '100%' }} />
-                                    <div className="text-[11.5px]" style={{ color: 'var(--ink-faint)' }}>
-                                        {g.activity_ids.length} {g.activity_ids.length === 1 ? 'activity' : 'activities'}
+                {
+                    groupPreview && groupPreview.length > 0 && (
+                        <div className="px-5 py-4" style={{ borderTop: '1px solid var(--divider)', background: 'color-mix(in srgb, var(--accent) 4%, var(--surface))' }}>
+                            <div className="text-[13px] font-semibold mb-2" style={{ color: 'var(--ink)' }}>Suggested grouping</div>
+                            <div className="space-y-2 mb-3">
+                                {groupPreview.map((g, i) => (
+                                    <div key={i} className="rounded-lg px-3 py-2" style={{ border: '1px solid var(--border)' }}>
+                                        <input defaultValue={g.category_name}
+                                            onChange={(e) => { groupPreview[i].category_name = e.target.value; }}
+                                            className="text-[13px] font-semibold mb-1"
+                                            style={{ background: 'transparent', border: 'none', outline: 'none', color: 'var(--accent-deep)', width: '100%' }} />
+                                        <div className="text-[11.5px]" style={{ color: 'var(--ink-faint)' }}>
+                                            {g.activity_ids.length} {g.activity_ids.length === 1 ? 'activity' : 'activities'}
+                                        </div>
                                     </div>
-                                </div>
-                            ))}
+                                ))}
+                            </div>
+                            <div className="flex justify-end gap-2">
+                                <button onClick={() => setGroupPreview(null)} className="tw-link text-[13px] px-3 py-1.5" style={{ color: 'var(--ink-soft)' }}>No thanks</button>
+                                <button onClick={() => applyGrouping(groupPreview)} className="tw-btn text-[13px] font-semibold px-4 py-1.5 rounded-lg"
+                                    style={{ background: 'var(--accent)', color: 'var(--accent-ink)' }}>Apply grouping</button>
+                            </div>
                         </div>
-                        <div className="flex justify-end gap-2">
-                            <button onClick={() => setGroupPreview(null)} className="tw-link text-[13px] px-3 py-1.5" style={{ color: 'var(--ink-soft)' }}>No thanks</button>
-                            <button onClick={() => applyGrouping(groupPreview)} className="tw-btn text-[13px] font-semibold px-4 py-1.5 rounded-lg"
-                                style={{ background: 'var(--accent)', color: 'var(--accent-ink)' }}>Apply grouping</button>
+                    )
+                }
+                {
+                    selecting && selected.size > 0 && (
+                        <div style={{ position: 'sticky', bottom: 0, display: 'flex', alignItems: 'center', gap: 14, padding: '12px 20px', borderTop: '1px solid var(--divider)', background: 'var(--panel)', color: 'var(--panel-ink)' }}>
+                            <span className="text-[13px] font-bold">{selected.size} selected</span>
+                            <button onClick={bulkDelete} className="tw-btn text-[12.5px] font-semibold px-3 py-1.5 rounded-lg" style={{ background: 'var(--danger)', color: '#fff', border: 'none', marginLeft: 'auto' }}>🗑 Delete</button>
+                            <button onClick={exitSelect} className="tw-link text-[12.5px]" style={{ color: 'rgba(245,242,237,0.7)' }}>Cancel</button>
                         </div>
-                    </div>
+                    )
+                }
+            </div >
+        );
+    }
+
+    function CategoryHeader({ cat, count, tripId, itineraryId, onChanged }: {
+        cat: CategoryRow; count: number; tripId: number; itineraryId: number; onChanged: () => void;
+    }) {
+        const [editing, setEditing] = useState(false);
+        const [name, setName] = useState(cat.category_name);
+        const [menuOpen, setMenuOpen] = useState(false);
+        const [busy, setBusy] = useState(false);
+
+        async function rename() {
+            const v = name.trim();
+            if (!v || v === cat.category_name) { setEditing(false); setName(cat.category_name); return; }
+            setBusy(true);
+            try {
+                await fetch(`/api/trips/${tripId}/itinerary/${itineraryId}/categories/${cat.category_id}`, {
+                    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ category_name: v }),
+                });
+                onChanged();
+            } finally { setBusy(false); setEditing(false); }
+        }
+
+        async function del() {
+            setMenuOpen(false);
+            const msg = count > 0
+                ? `Delete "${cat.category_name}"? Its ${count} ${count === 1 ? 'activity' : 'activities'} will move to Ungrouped — they won't be lost.`
+                : `Delete "${cat.category_name}"?`;
+            if (!confirm(msg)) return;
+            await fetch(`/api/trips/${tripId}/itinerary/${itineraryId}/categories/${cat.category_id}`, { method: 'DELETE' });
+            onChanged();
+        }
+
+        return (
+            <div className="flex items-center gap-2 mb-2 relative">
+                {editing ? (
+                    <input value={name} onChange={(e) => setName(e.target.value)} autoFocus
+                        onKeyDown={(e) => { if (e.key === 'Enter') rename(); if (e.key === 'Escape') { setEditing(false); setName(cat.category_name); } }}
+                        onBlur={rename} disabled={busy}
+                        className="text-[11px] uppercase font-semibold"
+                        style={{ color: 'var(--accent-deep)', letterSpacing: '0.4px', background: 'var(--surface)', border: '1px solid var(--accent)', borderRadius: 6, padding: '2px 6px', outline: 'none' }} />
+                ) : (
+                    <span className="text-[11px] uppercase font-semibold" style={{ color: 'var(--accent-deep)', letterSpacing: '0.4px' }}>
+                        {cat.category_name} <span style={{ color: 'var(--ink-faint)', fontWeight: 400 }}>({count})</span>
+                    </span>
                 )}
+                {!editing && (
+                    <button onClick={() => setMenuOpen((o) => !o)} className="tw-link"
+                        style={{ color: 'var(--ink-faint)', fontSize: 15, lineHeight: 1, padding: '0 4px' }} title="Category options">⋯</button>
+                )}
+                {menuOpen && (
+                    <>
+                        <div style={{ position: 'fixed', inset: 0, zIndex: 10 }} onClick={() => setMenuOpen(false)} />
+                        <div className="rounded-lg" style={{ position: 'absolute', top: 22, left: 0, zIndex: 20, background: 'var(--surface)', border: '1px solid var(--border)', boxShadow: '0 10px 30px rgba(20,15,8,0.16)', padding: 5, minWidth: 150 }}>
+                            <button onClick={() => { setMenuOpen(false); setEditing(true); }}
+                                className="tw-link" style={{ display: 'flex', width: '100%', gap: 8, padding: '8px 10px', fontSize: 13, color: 'var(--ink)', borderRadius: 7, textAlign: 'left' }}>✎ Rename</button>
+                            <button onClick={del}
+                                className="tw-link" style={{ display: 'flex', width: '100%', gap: 8, padding: '8px 10px', fontSize: 13, color: 'var(--danger)', borderRadius: 7, textAlign: 'left' }}>🗑 Delete category</button>
+                        </div>
+                    </>
+                )}
+            </div>
+        );
+    }
+
+    function DroppableGroup({ id, children }: { id: string; children: React.ReactNode }) {
+        // A SortableContext already registers droppable items; this wrapper gives an
+        // empty group a drop target and some min-height so you can drop into it.
+        return <div data-group={id} className="space-y-1.5" style={{ minHeight: 8 }}>{children}</div>;
+    }
+
+    function SortableRangeRow({ id, active, onDelete, children }: { id: string; active: boolean; onDelete?: () => void; children: React.ReactNode }) {
+        const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+        return (
+            <div ref={setNodeRef}
+                className="flex items-stretch group"
+                style={{
+                    transform: CSS.Transform.toString(transform), transition,
+                    opacity: isDragging ? 0.5 : 1,
+                    background: active ? 'color-mix(in srgb, var(--accent) 8%, transparent)' : 'transparent',
+                    borderTop: '1px solid var(--divider)',
+                }}>
+                <span {...attributes} {...listeners} title="Drag to reorder"
+                    className="flex items-center pl-2 pr-1"
+                    style={{ cursor: 'grab', color: 'var(--ink-faint)', fontSize: 14, letterSpacing: '-2px', touchAction: 'none', flexShrink: 0 }}>⠿</span>
+                <div className="flex-1 min-w-0">{children}</div>
+                {onDelete && (
+                    <button onClick={(e) => { e.stopPropagation(); onDelete(); }} title="Delete this range"
+                        className="flex items-center px-2 opacity-0 group-hover:opacity-100 transition-opacity"
+                        style={{ color: 'var(--ink-faint)', fontSize: 13, background: 'none', border: 'none', cursor: 'pointer', flexShrink: 0 }}>🗑</button>
+                )}
+            </div>
+        );
+    }
+
+    function SortableActivityRow({ id, disabled, children }: { id: number; disabled?: boolean; children: React.ReactNode }) {
+        const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id, disabled });
+        const style: React.CSSProperties = {
+            transform: CSS.Transform.toString(transform),
+            transition,
+            opacity: isDragging ? 0.5 : 1,
+        };
+        return (
+            <div ref={setNodeRef} style={style} className="flex items-center gap-1">
+                {!disabled && (
+                    <span {...attributes} {...listeners} className="tw-link" title="Drag to move"
+                        style={{ cursor: 'grab', color: 'var(--ink-faint)', fontSize: 14, letterSpacing: '-2px', flexShrink: 0, touchAction: 'none' }}>⠿</span>
+                )}
+                <div style={{ flex: 1, minWidth: 0 }}>{children}</div>
             </div>
         );
     }
